@@ -1,0 +1,248 @@
+// ==========================================================
+// Edison Duel Simulator — schema Prisma (MVP: auth + deck builder + economia + loja)
+// Motor de duelo (ocgcore) e modelos de Match/Replay ficam prontos aqui
+// para quando a fase de duelo automático for implementada.
+// ==========================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Dev local: sqlite. Em produção, troque para "postgresql" + DATABASE_URL do Postgres.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------- CARTAS / BANLIST ----------------
+
+model Card {
+  id          Int      @id
+  name        String
+  type        String
+  race        String?
+  attribute   String?
+  atk         Int?
+  def         Int?
+  level       Int?
+  description String
+  imageUrl    String?
+
+  banlistEntries BanlistEntry[]
+  deckCards      DeckCard[]
+  shopListing    ShopListing?
+  ownerships     UserCardOwnership[]
+  purchases      Purchase[]
+
+  @@index([name])
+}
+
+model BanlistEntry {
+  id     String @id @default(cuid())
+  cardId Int
+  card   Card   @relation(fields: [cardId], references: [id])
+  format String
+  status String // forbidden | limited | semi-limited | unlimited
+
+  @@unique([cardId, format])
+}
+
+// ---------------- USUÁRIO / AUTH ----------------
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  passwordHash  String?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean @default(false)
+  lastLoginAt      DateTime?
+  lastLoginIp      String?
+
+  accounts Account[]
+  sessions Session[]
+
+  decks                Deck[]
+  matchesAsPlayer      MatchPlayer[]
+  wallet               Wallet?
+  currencyTransactions CurrencyTransaction[]
+  payments             Payment[]
+  ownerships           UserCardOwnership[]
+  purchases            Purchase[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
+}
+
+// ---------------- DECKS ----------------
+
+model Deck {
+  id        String     @id @default(cuid())
+  name      String
+  userId    String?
+  user      User?      @relation(fields: [userId], references: [id])
+  format    String     @default("edison")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  cards     DeckCard[]
+}
+
+model DeckCard {
+  id       String @id @default(cuid())
+  deckId   String
+  deck     Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  cardId   Int
+  card     Card   @relation(fields: [cardId], references: [id])
+  section  String // main | extra | side
+  quantity Int
+
+  @@unique([deckId, cardId, section])
+}
+
+// ---------------- PARTIDAS (preparado para fase futura) ----------------
+
+model Match {
+  id         String        @id @default(cuid())
+  createdAt  DateTime      @default(now())
+  finishedAt DateTime?
+  format     String        @default("edison")
+
+  players MatchPlayer[]
+  actions GameAction[]
+  replay  Replay?
+}
+
+model MatchPlayer {
+  id      String  @id @default(cuid())
+  matchId String
+  match   Match   @relation(fields: [matchId], references: [id])
+  userId  String
+  user    User    @relation(fields: [userId], references: [id])
+  deckId  String
+  result  String?
+
+  @@unique([matchId, userId])
+}
+
+model GameAction {
+  id        String   @id @default(cuid())
+  matchId   String
+  match     Match    @relation(fields: [matchId], references: [id])
+  turn      Int
+  sequence  Int
+  actorId   String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([matchId, turn, sequence])
+}
+
+model Replay {
+  id        String   @id @default(cuid())
+  matchId   String   @unique
+  match     Match    @relation(fields: [matchId], references: [id])
+  data      Json
+  createdAt DateTime @default(now())
+}
+
+// ---------------- ECONOMIA ----------------
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  gold      Int      @default(0)
+  cash      Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model CurrencyTransaction {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  currency     String // gold | cash
+  amount       Int
+  balanceAfter Int
+  reason       String // match_win | match_loss | shop_purchase | cash_topup | tournament_prize | refund
+  refType      String?
+  refId        String?
+  createdAt    DateTime @default(now())
+
+  @@unique([refType, refId, reason, userId])
+  @@index([userId, createdAt])
+}
+
+model Payment {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  provider          String
+  providerPaymentId String   @unique
+  amountCents       Int
+  currencyCode      String
+  cashGranted       Int
+  status            String
+  createdAt         DateTime @default(now())
+}
+
+// ---------------- LOJA ----------------
+
+model ShopListing {
+  id        String  @id @default(cuid())
+  cardId    Int     @unique
+  card      Card    @relation(fields: [cardId], references: [id])
+  priceGold Int?
+  priceCash Int?
+  cashOnly  Boolean @default(false)
+  active    Boolean @default(true)
+}
+
+model UserCardOwnership {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  cardId   Int
+  card     Card   @relation(fields: [cardId], references: [id])
+  quantity Int    @default(0)
+
+  @@unique([userId, cardId])
+}
+
+model Purchase {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  cardId       Int
+  card         Card     @relation(fields: [cardId], references: [id])
+  currencyUsed String
+  amountPaid   Int
+  createdAt    DateTime @default(now())
+}
