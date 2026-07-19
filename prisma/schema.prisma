@@ -9,9 +9,7 @@ generator client {
 }
 
 datasource db {
-  // Dev local: sqlite. Em produção, troque para "postgresql" + DATABASE_URL do Postgres.
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
 }
 
 // ---------------- CARTAS / BANLIST ----------------
