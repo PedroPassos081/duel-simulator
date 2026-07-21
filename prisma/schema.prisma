@@ -6,10 +6,11 @@
 
 generator client {
   provider = "prisma-client-js"
+  engineType = "library"
 }
-
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ---------------- CARTAS / BANLIST ----------------
@@ -221,6 +222,10 @@ model ShopListing {
   priceCash Int?
   cashOnly  Boolean @default(false)
   active    Boolean @default(true)
+  
+  maxTotal  Int     @default(3) // Limite geral da carta (ex: 1 para limitadas)
+  maxGold   Int     @default(3) // Quantas cópias pode comprar com Gold
+  maxCash   Int     @default(3) // Quantas cópias pode comprar com Cash
 }
 
 model UserCardOwnership {

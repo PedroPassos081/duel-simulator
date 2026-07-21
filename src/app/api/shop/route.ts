@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { ShopListing, UserCardOwnership } from "@prisma/client";
 
 export async function GET() {
   const session = await auth();
@@ -15,10 +16,14 @@ export async function GET() {
   let ownershipByCard = new Map<number, number>();
   if (userId) {
     const ownerships = await prisma.userCardOwnership.findMany({ where: { userId } });
-    ownershipByCard = new Map(ownerships.map((o) => [o.cardId, o.quantity]));
+    // Define explicitamente o tipo do parâmetro 'o' com base no modelo do Prisma
+    ownershipByCard = new Map(
+      ownerships.map((o: UserCardOwnership) => [o.cardId, o.quantity])
+    );
   }
 
-  const result = listings.map((listing) => ({
+  // Define o tipo do parâmetro 'listing' combinando o modelo da tabela com a relação incluída do card
+  const result = listings.map((listing: ShopListing & { card: any }) => ({
     ...listing,
     ownedQuantity: ownershipByCard.get(listing.cardId) ?? 0,
   }));
