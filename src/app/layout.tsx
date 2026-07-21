@@ -3,7 +3,7 @@ import "@/app/globals.css";
 import { Navbar } from "@/components/Navbar";
 
 export const metadata: Metadata = {
-  title: "Edison Duel Simulator",
+  title: "Duel Simulator",
   description: "Deck builder e simulador para o formato Edison — projeto de fã, não afiliado à Konami.",
 };
 

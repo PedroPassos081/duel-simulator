@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { CircleDollarSign, Banknote } from "lucide-react";
+import { CircleDollarSign, Gem } from "lucide-react";
 import type { Card } from "@/types/card";
 
 interface ShopListing {
@@ -330,22 +330,24 @@ export default function ShopPage() {
                       )}
                     </button>
                   )}
+                  {/* BOTÃO GEM (ROXO) */}
                   {listing.priceCash != null && (
                     <button
                       disabled={maxed || loadingId === `${listing.cardId}-cash`}
                       onClick={() => handleBuy(listing.cardId, "cash")}
-                      className="group/btn rounded-lg bg-zinc-800 text-zinc-200 text-xs font-bold py-2 px-1 hover:bg-emerald-500 hover:text-black disabled:bg-zinc-800/30 disabled:text-zinc-600 transition-all text-center flex items-center justify-center gap-1 min-h-[32px]"
+                      className="group/btn rounded-lg bg-zinc-800 text-zinc-200 text-xs font-bold py-2 px-1 hover:bg-purple-500 hover:text-white disabled:bg-zinc-800/30 disabled:text-zinc-600 transition-all text-center flex items-center justify-center gap-1 min-h-[32px]"
                     >
                       {loadingId === `${listing.cardId}-cash` ? (
                         "..."
                       ) : (
                         <>
-                          <Banknote className="w-3.5 h-3.5 text-emerald-400 group-hover/btn:text-black transition-colors" />
+                          <Gem className="w-3.5 h-3.5 text-purple-400 group-hover/btn:text-white transition-colors" />
                           <span>{listing.priceCash}</span>
                         </>
                       )}
                     </button>
                   )}
+          
                 </div>
 
                 {maxed && (
@@ -472,13 +474,13 @@ export default function ShopPage() {
                       <button
                         disabled={maxed || loadingId === `${selectedListing.cardId}-cash`}
                         onClick={() => handleBuy(selectedListing.cardId, "cash")}
-                        className="rounded-xl bg-emerald-500 text-black text-xs font-bold py-3 px-2 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-600 transition-all text-center flex items-center justify-center gap-1.5"
+                        className="rounded-xl bg-purple-600 text-white text-xs font-bold py-3 px-2 hover:bg-purple-500 disabled:bg-zinc-800 disabled:text-zinc-600 transition-all text-center flex items-center justify-center gap-1.5"
                       >
                         {loadingId === `${selectedListing.cardId}-cash` ? (
                           "..."
                         ) : (
                           <>
-                            <Banknote className="w-4 h-4 text-black" />
+                            <Gem className="w-4 h-4 text-white" />
                             <span>Comprar ({selectedListing.priceCash})</span>
                           </>
                         )}

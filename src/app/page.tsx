@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function HomePage() {
   return (
     <div className="flex flex-col items-start gap-6 py-16">
-      <h1 className="text-4xl font-bold">Edison Duel Simulator</h1>
+      <h1 className="text-4xl font-bold">Duel Simulator</h1>
       <p className="max-w-2xl text-gray-400">
         Monte decks do formato Edison, valide contra a banlist, e (em breve) jogue partidas
         automáticas 1v1 no navegador. Projeto de fã, sem afiliação com a Konami.
