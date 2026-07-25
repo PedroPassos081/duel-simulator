@@ -54,3 +54,39 @@ export async function GET(
     })),
   });
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: { id: string } }
+) {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  }
+
+  const cancelled = await prisma.$transaction(async (tx) => {
+    const room = await tx.match.findFirst({
+      where: {
+        id: params.id,
+        status: "waiting",
+        players: { some: { userId } },
+      },
+      include: { players: true },
+    });
+    if (!room || room.players.length !== 1) return false;
+
+    await tx.matchPlayer.deleteMany({ where: { matchId: room.id } });
+    await tx.match.delete({ where: { id: room.id } });
+    return true;
+  });
+
+  if (!cancelled) {
+    return NextResponse.json(
+      { error: "A busca já terminou e não pode mais ser cancelada." },
+      { status: 409 }
+    );
+  }
+
+  return NextResponse.json({ cancelled: true });
+}
