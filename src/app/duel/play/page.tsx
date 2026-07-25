@@ -424,22 +424,22 @@ export default function DuelPlayPage() {
             <div className="absolute right-1 top-1 z-10">
               <DuelistHud opponent />
             </div>
-            <div className="flex min-h-[58px] items-start justify-center gap-1 pt-1">
+            <div className="mb-2 flex min-h-[58px] items-start justify-center gap-1 pt-1">
               {Array.from({ length: 5 }, (_, index) => (
                 <CardBack key={index} small />
               ))}
             </div>
 
             <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-red-400/15 bg-red-950/[0.08] p-1">
-              <div className="space-y-2">
+              <div className="flex flex-col items-center gap-2">
                 <DeckPile count={opponentDeckCount} />
                 <EmptyZone accent="blue" />
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col items-center gap-2">
                 <ZoneRow opponent kind="spell" />
                 <ZoneRow opponent kind="monster" />
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col items-center gap-2">
                 <EmptyZone accent="pink" />
                 <EmptyZone accent="blue" />
               </div>
@@ -472,7 +472,7 @@ export default function DuelPlayPage() {
             </div>
 
             <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-sky-400/20 bg-sky-950/[0.1] p-1">
-              <div className="space-y-2">
+              <div className="flex flex-col items-center gap-2">
                 <EmptyZone accent="pink" />
                 <div className="relative">
                   <EmptyZone accent="blue" />
@@ -497,7 +497,7 @@ export default function DuelPlayPage() {
                   />
                 </div>
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col items-center gap-2">
                 <EmptyZone accent="blue" />
                 <DeckPile count={playerDeckCount} />
               </div>
