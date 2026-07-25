@@ -41,6 +41,7 @@ export const purchaseSchema = z.object({
 });
 
 export const deckSaveSchema = z.object({
+  id: z.string().cuid().optional(),
   name: z.string().min(1).max(80),
   cards: z.array(
     z.object({
