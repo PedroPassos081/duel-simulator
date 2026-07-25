@@ -98,7 +98,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="relative isolate flex min-h-[calc(100vh-64px)] items-center justify-center overflow-hidden px-4 py-12">
+    <main className="relative isolate flex min-h-[calc(100vh-3rem)] items-center justify-center overflow-hidden px-4 py-12">
       <div className="absolute left-1/2 top-0 -z-10 h-72 w-72 -translate-x-1/2 rounded-full bg-edison-gold/10 blur-3xl" />
 
       <section className="w-full max-w-md rounded-2xl border border-edison-border bg-edison-panel/90 p-6 shadow-2xl shadow-black/30 backdrop-blur sm:p-8">
