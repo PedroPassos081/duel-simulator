@@ -30,14 +30,12 @@ function CardBack({ small = false }: { small?: boolean }) {
 
 function EmptyZone({
   accent = "blue",
-  label,
 }: {
   accent?: "blue" | "pink";
-  label?: string;
 }) {
   return (
     <div
-      className={`relative flex h-[clamp(82px,12vh,120px)] aspect-[0.72] min-h-0 justify-self-center items-center justify-center rounded-[3px] border bg-black/15 ${
+      className={`relative flex h-[clamp(60px,9vh,92px)] aspect-[0.72] min-h-0 justify-self-center items-center justify-center rounded-[3px] border bg-black/15 ${
         accent === "pink"
           ? "border-fuchsia-300/80 shadow-[inset_0_0_12px_rgba(244,114,182,0.12)]"
           : "border-sky-300/80 shadow-[inset_0_0_12px_rgba(56,189,248,0.12)]"
@@ -48,11 +46,6 @@ function EmptyZone({
           accent === "pink" ? "border-fuchsia-500/50" : "border-sky-400/50"
         }`}
       />
-      {label && (
-        <span className="absolute bottom-1 text-[7px] font-bold uppercase tracking-wider text-white/25">
-          {label}
-        </span>
-      )}
     </div>
   );
 }
@@ -77,7 +70,7 @@ function ZoneRow({
           <button
             key={`${card.id}-${index}`}
             onClick={() => onSelect?.(card)}
-            className="group relative h-[clamp(82px,12vh,120px)] aspect-[0.72] min-h-0 justify-self-center overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110"
+            className="group relative h-[clamp(60px,9vh,92px)] aspect-[0.72] min-h-0 justify-self-center overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110"
             title={`Ver ${card.name}`}
           >
             <Image
@@ -88,15 +81,11 @@ function ZoneRow({
               className="object-cover"
               unoptimized
             />
-            <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-black/80 py-1 text-[7px] font-bold opacity-0 transition group-hover:opacity-100">
-              <Eye className="h-2.5 w-2.5" /> Ver carta
-            </span>
           </button>
         ) : (
           <EmptyZone
             key={index}
             accent={pink ? "pink" : "blue"}
-            label={pink ? "Spell / Trap" : "Monstro"}
           />
         );
       })}
@@ -246,11 +235,11 @@ export default function DuelPlayPage() {
     .slice(0, 2);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-auto bg-[#080b12] text-white">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-[#080b12] text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
 
-      <div className="relative z-10 mx-auto grid min-h-screen min-w-[1120px] max-w-[1600px] grid-cols-[250px_minmax(840px,1fr)] items-center gap-3 px-3 py-3">
+      <div className="relative z-10 mx-auto grid h-screen w-full max-w-[1600px] grid-cols-[clamp(210px,18vw,250px)_minmax(0,1fr)] items-center gap-3 overflow-hidden px-3 py-3">
         <CardInspector card={selectedCard} />
 
         <main className="relative mx-auto flex h-[calc(100vh-24px)] max-h-[1000px] w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-3 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
@@ -258,14 +247,14 @@ export default function DuelPlayPage() {
 
           <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-2">
             <div className="flex items-center justify-between gap-4">
-              <DuelistHud opponent />
+              <DuelistHud />
               <div className="text-center">
                 <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/35">
                   Turno
                 </p>
                 <p className="font-mono text-xl font-black text-edison-gold">01</p>
               </div>
-              <DuelistHud />
+              <DuelistHud opponent />
             </div>
 
             <div className="flex items-center justify-center gap-2">
@@ -274,7 +263,7 @@ export default function DuelPlayPage() {
               ))}
             </div>
 
-            <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3">
+            <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3 rounded-xl border border-red-400/15 bg-red-950/[0.08] p-2">
               <div className="space-y-2">
                 <div className="relative">
                   <CardBack />
@@ -282,15 +271,15 @@ export default function DuelPlayPage() {
                     35
                   </span>
                 </div>
-                <EmptyZone accent="blue" label="Cemitério" />
+                <EmptyZone accent="blue" />
               </div>
               <div className="space-y-2">
                 <ZoneRow opponent kind="spell" />
                 <ZoneRow opponent kind="monster" />
               </div>
               <div className="space-y-2">
-                <EmptyZone accent="pink" label="Campo" />
-                <EmptyZone accent="blue" label="Extra" />
+                <EmptyZone accent="pink" />
+                <EmptyZone accent="blue" />
               </div>
             </div>
 
@@ -312,36 +301,27 @@ export default function DuelPlayPage() {
                   Finalizar turno
                 </button>
               </div>
-              <p className="mt-1.5 text-center text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-300">
-                Fase atual · Main Phase 1
-              </p>
             </div>
 
-            <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3">
+            <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3 rounded-xl border border-sky-400/20 bg-sky-950/[0.1] p-2">
               <div className="space-y-2">
-                <EmptyZone accent="pink" label="Campo" />
+                <EmptyZone accent="pink" />
                 <div className="relative">
-                  <EmptyZone accent="blue" label="Extra Deck" />
+                  <EmptyZone accent="blue" />
                   <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
                     {extraCount}
                   </span>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <div className="rounded-lg border border-sky-400/10 bg-sky-500/[0.04] px-2 pb-2 pt-1">
-                  <p className="mb-1 text-center text-[8px] font-bold uppercase tracking-[0.22em] text-sky-200/55">
-                    Zonas de monstros
-                  </p>
+                <div>
                   <ZoneRow
                     kind="monster"
                     cards={fieldMonsters}
                     onSelect={setSelectedCard}
                   />
                 </div>
-                <div className="rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/[0.08] px-2 pb-2 pt-1 shadow-[inset_0_0_18px_rgba(217,70,239,0.06)]">
-                  <p className="mb-1 text-center text-[9px] font-black uppercase tracking-[0.22em] text-fuchsia-200">
-                    Suas zonas de Spell / Trap
-                  </p>
+                <div>
                   <ZoneRow
                     kind="spell"
                     cards={fieldSpellTraps}
@@ -350,7 +330,7 @@ export default function DuelPlayPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <EmptyZone accent="blue" label="Cemitério" />
+                <EmptyZone accent="blue" />
                 <div className="relative">
                   <CardBack />
                   <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
@@ -360,7 +340,7 @@ export default function DuelPlayPage() {
               </div>
             </div>
 
-            <div className="flex h-[clamp(66px,9vh,92px)] items-end justify-center gap-1.5">
+            <div className="flex h-[clamp(88px,13vh,122px)] items-end justify-center gap-2">
               {loading &&
                 Array.from({ length: 5 }, (_, index) => (
                   <CardBack key={index} small />
@@ -371,7 +351,7 @@ export default function DuelPlayPage() {
                     <button
                       key={`${card.id}-${index}`}
                       onClick={() => setSelectedCard(card)}
-                      className="group relative h-[clamp(62px,8vh,86px)] aspect-[421/614] transition hover:z-10 hover:-translate-y-3 hover:scale-125"
+                      className="group relative h-[clamp(84px,12vh,116px)] aspect-[421/614] transition hover:z-10 hover:-translate-y-2 hover:scale-110"
                     >
                       <Image
                         src={card.imageUrl}
