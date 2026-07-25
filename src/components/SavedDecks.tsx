@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Eye, X } from "lucide-react";
+import { ChevronDown, Copy, Eye, X } from "lucide-react";
 import type { Card, DeckSection } from "@/types/card";
 
 export type SavedDeck = {
@@ -10,9 +10,10 @@ export type SavedDeck = {
   cards: { cardId: number; section: DeckSection; quantity: number; card: Card }[];
 };
 
-export function SavedDecks({ decks, open, onToggle, preview, onPreview, onEquip }: {
+export function SavedDecks({ decks, open, onToggle, preview, onPreview, onDuplicate, onEquip }: {
   decks: SavedDeck[]; open: boolean; onToggle: () => void; preview?: SavedDeck;
-  onPreview: (deck?: SavedDeck) => void; onEquip: (deck: SavedDeck) => void;
+  onPreview: (deck?: SavedDeck) => void; onDuplicate: (deck: SavedDeck) => void;
+  onEquip: (deck: SavedDeck) => void;
 }) {
   const section = (deck: SavedDeck, value: DeckSection) =>
     deck.cards.filter((item) => item.section === value);
@@ -29,6 +30,7 @@ export function SavedDecks({ decks, open, onToggle, preview, onPreview, onEquip 
             <div key={deck.id} className="flex items-center gap-3 rounded-lg border border-edison-border bg-edison-panel px-3 py-2">
               <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{deck.name}</p><p className="text-xs text-gray-500">{deck.cards.reduce((n, c) => n + c.quantity, 0)} cartas {deck.isEquipped && <span className="text-edison-gold">· Equipado</span>}</p></div>
               <button onClick={() => onPreview(deck)} className="flex items-center gap-1 rounded border border-edison-border px-2 py-1 text-xs hover:bg-zinc-800"><Eye className="h-3 w-3" /> Visualizar</button>
+              <button onClick={() => onDuplicate(deck)} className="flex items-center gap-1 rounded border border-edison-border px-2 py-1 text-xs hover:bg-zinc-800"><Copy className="h-3 w-3" /> Duplicar</button>
               <button onClick={() => onEquip(deck)} disabled={deck.isEquipped} className="rounded bg-edison-gold px-2 py-1 text-xs font-bold text-black disabled:opacity-40">Equipar</button>
             </div>
           ))}
