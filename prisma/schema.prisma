@@ -127,6 +127,7 @@ model Deck {
   cards     DeckCard[]
 
   @@index([userId, isEquipped])
+  @@unique([userId, name])
 }
 
 model DeckCard {
