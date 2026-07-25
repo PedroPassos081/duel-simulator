@@ -1,9 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Bot, Clock3, Eye, Swords } from "lucide-react";
+import { Bot, Eye, Swords } from "lucide-react";
 import type { Card, DeckSection } from "@/types/card";
 
 type EquippedDeck = {
@@ -107,7 +106,7 @@ function ZoneRow({
 
 function CardInspector({ card }: { card?: Card }) {
   return (
-    <aside className="flex h-[calc(100vh-82px)] max-h-[900px] flex-col overflow-hidden rounded-xl border border-white/10 bg-black/55 backdrop-blur-md">
+    <aside className="flex h-[calc(100vh-24px)] max-h-[1000px] flex-col overflow-hidden rounded-xl border border-white/10 bg-black/55 backdrop-blur-md">
       <div className="border-b border-white/10 px-4 py-3">
         <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-edison-gold">
           <Eye className="h-4 w-4" /> Carta selecionada
@@ -164,35 +163,39 @@ function CardInspector({ card }: { card?: Card }) {
   );
 }
 
-function PlayerPanel({
-  opponent = false,
-  deckName,
-}: {
-  opponent?: boolean;
-  deckName?: string;
-}) {
+function DuelistHud({ opponent = false }: { opponent?: boolean }) {
   return (
-    <section className="w-36 shrink-0 rounded-xl border border-white/10 bg-black/45 p-3 text-center backdrop-blur-md">
+    <section
+      className={`flex min-w-56 items-center gap-3 rounded-xl border px-3 py-2 backdrop-blur-md ${
+        opponent
+          ? "border-red-400/25 bg-red-950/35"
+          : "border-sky-400/25 bg-sky-950/35"
+      }`}
+    >
       <div
-        className={`mx-auto flex h-14 w-14 items-center justify-center rounded-lg border ${
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border ${
           opponent
             ? "border-red-400/30 bg-red-500/10 text-red-300"
             : "border-sky-400/30 bg-sky-500/10 text-sky-300"
         }`}
       >
-        {opponent ? <Bot className="h-7 w-7" /> : <Swords className="h-7 w-7" />}
+        {opponent ? <Bot className="h-6 w-6" /> : <Swords className="h-6 w-6" />}
       </div>
-      <p className="mt-2 truncate text-sm font-bold">
-        {opponent ? "CPU Edison" : "Você"}
-      </p>
-      <p className="mt-0.5 truncate text-[10px] text-white/35">
-        {opponent ? "Oponente" : deckName ?? "Deck equipado"}
-      </p>
-      <div className={`mt-3 h-1.5 rounded-full ${opponent ? "bg-red-500" : "bg-sky-500"}`} />
-      <p className="mt-1.5 font-mono text-lg font-black">8000</p>
-      <span className="text-[9px] uppercase tracking-[0.25em] text-white/30">
-        Pontos de vida
-      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-black">
+          {opponent ? "CPU Edison" : "Você"}
+        </p>
+        <div className="mt-1 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/40">
+            <div
+              className={`h-full w-full ${
+                opponent ? "bg-red-500" : "bg-sky-500"
+              }`}
+            />
+          </div>
+          <p className="font-mono text-sm font-black">8000 LP</p>
+        </div>
+      </div>
     </section>
   );
 }
@@ -247,32 +250,24 @@ export default function DuelPlayPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
 
-      <header className="relative z-10 flex h-14 items-center justify-between border-b border-white/10 bg-black/30 px-4 backdrop-blur-md">
-        <Link
-          href="/duel"
-          className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 transition hover:bg-white/10 hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Sair do campo
-        </Link>
-        <div className="text-center">
-          <p className="text-xs font-black uppercase tracking-[0.25em] text-edison-gold">
-            Duelo Edison
-          </p>
-          <p className="text-[10px] text-white/35">Turno 1 · Sua vez</p>
-        </div>
-        <div className="flex items-center gap-2 font-mono text-xs text-white/60">
-          <Clock3 className="h-4 w-4" /> 05:00
-        </div>
-      </header>
-
-      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-56px)] min-w-[1240px] max-w-[1800px] grid-cols-[250px_minmax(780px,1fr)_160px] items-center gap-3 px-3 py-3">
+      <div className="relative z-10 mx-auto grid min-h-screen min-w-[1120px] max-w-[1600px] grid-cols-[250px_minmax(840px,1fr)] items-center gap-3 px-3 py-3">
         <CardInspector card={selectedCard} />
 
-        <main className="relative mx-auto flex h-[calc(100vh-70px)] max-h-[980px] w-full max-w-[1080px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-3 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
+        <main className="relative mx-auto flex h-[calc(100vh-24px)] max-h-[1000px] w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-3 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,transparent_0,transparent_28%,rgba(168,85,247,.5)_29%,transparent_30%,transparent_43%,rgba(34,211,238,.35)_44%,transparent_45%)]" />
 
           <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-2">
+            <div className="flex items-center justify-between gap-4">
+              <DuelistHud opponent />
+              <div className="text-center">
+                <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/35">
+                  Turno
+                </p>
+                <p className="font-mono text-xl font-black text-edison-gold">01</p>
+              </div>
+              <DuelistHud />
+            </div>
+
             <div className="flex items-center justify-center gap-2">
               {Array.from({ length: 5 }, (_, index) => (
                 <CardBack key={index} small />
@@ -281,14 +276,6 @@ export default function DuelPlayPage() {
 
             <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3">
               <div className="space-y-2">
-                <EmptyZone accent="pink" label="Campo" />
-                <EmptyZone accent="blue" label="Extra" />
-              </div>
-              <div className="space-y-2">
-                <ZoneRow opponent kind="spell" />
-                <ZoneRow opponent kind="monster" />
-              </div>
-              <div className="space-y-2">
                 <div className="relative">
                   <CardBack />
                   <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
@@ -296,6 +283,14 @@ export default function DuelPlayPage() {
                   </span>
                 </div>
                 <EmptyZone accent="blue" label="Cemitério" />
+              </div>
+              <div className="space-y-2">
+                <ZoneRow opponent kind="spell" />
+                <ZoneRow opponent kind="monster" />
+              </div>
+              <div className="space-y-2">
+                <EmptyZone accent="pink" label="Campo" />
+                <EmptyZone accent="blue" label="Extra" />
               </div>
             </div>
 
@@ -324,11 +319,11 @@ export default function DuelPlayPage() {
 
             <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3">
               <div className="space-y-2">
-                <EmptyZone accent="blue" label="Cemitério" />
+                <EmptyZone accent="pink" label="Campo" />
                 <div className="relative">
-                  <CardBack />
+                  <EmptyZone accent="blue" label="Extra Deck" />
                   <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
-                    {Math.max(mainDeck.length - 5, 0)}
+                    {extraCount}
                   </span>
                 </div>
               </div>
@@ -355,8 +350,13 @@ export default function DuelPlayPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <EmptyZone accent="blue" label="Extra" />
-                <EmptyZone accent="pink" label="Campo" />
+                <EmptyZone accent="blue" label="Cemitério" />
+                <div className="relative">
+                  <CardBack />
+                  <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
+                    {Math.max(mainDeck.length - 5, 0)}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -390,40 +390,6 @@ export default function DuelPlayPage() {
           </div>
         </main>
 
-        <aside className="flex h-full flex-col items-center justify-between py-4">
-          <PlayerPanel opponent />
-          <PlayerPanel deckName={deck?.name} />
-          <div className="w-full rounded-xl border border-emerald-400/20 bg-emerald-500/[0.06] p-3 text-center">
-            <p className="text-[9px] uppercase tracking-widest text-white/35">
-              Turno atual
-            </p>
-            <p className="mt-1 text-xl font-black text-emerald-300">01</p>
-            <p className="text-[9px] font-bold text-white/45">Sua vez</p>
-          </div>
-          <div className="w-full rounded-xl border border-white/10 bg-black/45 p-3 backdrop-blur-md">
-            <p className="text-xs font-bold">Estado da partida</p>
-            <div className="mt-3 space-y-2 text-[10px] text-white/45">
-              <div className="flex justify-between">
-                <span>Main Deck</span>
-                <strong className="text-white/80">{mainDeck.length}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span>Extra Deck</span>
-                <strong className="text-white/80">{extraCount}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span>Cartas na mão</span>
-                <strong className="text-white/80">{hand.length}</strong>
-              </div>
-            </div>
-          </div>
-          <div className="w-full rounded-xl border border-edison-gold/20 bg-edison-gold/5 p-3 text-center">
-            <p className="text-[10px] leading-4 text-white/45">
-              Interface visual pronta. As ações serão liberadas quando o motor
-              automático for conectado.
-            </p>
-          </div>
-        </aside>
       </div>
     </div>
   );
