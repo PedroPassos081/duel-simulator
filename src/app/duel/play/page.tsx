@@ -27,13 +27,24 @@ const PHASES = ["DP", "SP", "MP1", "BP", "MP2", "EP"];
 function CardBack({ small = false }: { small?: boolean }) {
   return (
     <div
-      className={`${small ? "h-[clamp(68px,9vh,88px)] aspect-[421/614]" : "h-[clamp(78px,10vh,110px)] aspect-[421/614]"} rounded border border-violet-300/50 bg-[#14101c] p-1 shadow-lg`}
+      className={`${small ? "h-[clamp(68px,9vh,88px)] aspect-[421/614]" : "h-[clamp(96px,14.5vh,142px)] aspect-[0.72]"} rounded border border-violet-300/50 bg-[#14101c] p-1 shadow-lg`}
     >
       <div className="flex h-full items-center justify-center rounded-sm border border-fuchsia-500/30 bg-[repeating-radial-gradient(ellipse_at_center,#5b214f_0,#25122d_18%,#0b0810_35%)]">
         <span className="-rotate-12 text-[9px] font-black tracking-tighter text-fuchsia-300/70">
           EDS
         </span>
       </div>
+    </div>
+  );
+}
+
+function DeckPile({ count }: { count: number }) {
+  return (
+    <div className="relative w-fit">
+      <CardBack />
+      <span className="absolute -bottom-1.5 -right-1.5 flex h-7 min-w-7 items-center justify-center rounded-full border border-white/25 bg-black px-1.5 font-mono text-xs font-black text-white shadow-lg">
+        {count}
+      </span>
     </div>
   );
 }
@@ -331,6 +342,8 @@ export default function DuelPlayPage() {
   const [deck, setDeck] = useState<EquippedDeck>();
   const [loading, setLoading] = useState(true);
   const [selectedCard, setSelectedCard] = useState<Card>();
+  const [playerDeckCount, setPlayerDeckCount] = useState(0);
+  const [opponentDeckCount, setOpponentDeckCount] = useState(35);
 
   useEffect(() => {
     fetch("/api/decks")
@@ -372,6 +385,27 @@ export default function DuelPlayPage() {
     })
     .slice(0, 2);
 
+  useEffect(() => {
+    setPlayerDeckCount(Math.max(mainDeck.length - 5, 0));
+  }, [mainDeck.length]);
+
+  useEffect(() => {
+    function updateDeckCounts(event: Event) {
+      const detail = (
+        event as CustomEvent<{ player?: number; opponent?: number }>
+      ).detail;
+      if (Number.isInteger(detail?.player) && detail.player! >= 0) {
+        setPlayerDeckCount(detail.player!);
+      }
+      if (Number.isInteger(detail?.opponent) && detail.opponent! >= 0) {
+        setOpponentDeckCount(detail.opponent!);
+      }
+    }
+
+    window.addEventListener("duel:deck-count", updateDeckCounts);
+    return () => window.removeEventListener("duel:deck-count", updateDeckCounts);
+  }, []);
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-[#080b12] text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
@@ -405,12 +439,7 @@ export default function DuelPlayPage() {
 
             <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-red-400/15 bg-red-950/[0.08] p-1">
               <div className="space-y-2">
-                <div className="relative">
-                  <CardBack />
-                  <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
-                    35
-                  </span>
-                </div>
+                <DeckPile count={opponentDeckCount} />
                 <EmptyZone accent="blue" />
               </div>
               <div className="space-y-2">
@@ -471,12 +500,7 @@ export default function DuelPlayPage() {
               </div>
               <div className="space-y-2">
                 <EmptyZone accent="blue" />
-                <div className="relative">
-                  <CardBack />
-                  <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
-                    {Math.max(mainDeck.length - 5, 0)}
-                  </span>
-                </div>
+                <DeckPile count={playerDeckCount} />
               </div>
             </div>
 
