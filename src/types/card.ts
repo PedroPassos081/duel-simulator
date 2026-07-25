@@ -10,6 +10,7 @@ export interface Card {
   description: string;
   imageUrl: string | null;
   banlistEntries?: { status: string }[];
+  ownedQuantity?: number;
 }
 
 export type DeckSection = "main" | "extra" | "side";
