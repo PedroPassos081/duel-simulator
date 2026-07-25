@@ -22,6 +22,7 @@ export async function GET(
         select: {
           userId: true,
           result: true,
+          rpsChoice: true,
           user: { select: { name: true, username: true, image: true } },
         },
       },
@@ -36,11 +37,20 @@ export async function GET(
     status: room.status,
     currentTurn: room.currentTurn,
     currentPhase: room.currentPhase,
+    meId: userId,
+    rpsRound: room.rpsRound,
+    rpsWinnerId: room.rpsWinnerId,
+    firstPlayerId: room.firstPlayerId,
     players: room.players.map((player) => ({
       id: player.userId,
       nickname: player.user.username ?? player.user.name ?? "Duelista",
       image: player.user.image,
       result: player.result,
+      choiceSubmitted: Boolean(player.rpsChoice),
+      rpsChoice:
+        room.status === "choosing" || room.status === "active"
+          ? player.rpsChoice
+          : undefined,
     })),
   });
 }
