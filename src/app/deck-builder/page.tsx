@@ -62,6 +62,15 @@ export default function DeckBuilderPage() {
     setMessage(`${deck.name} foi equipado.`);
   }
 
+  async function duplicateDeck(deck: SavedDeck) {
+    const res = await fetch(`/api/decks/${deck.id}`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) return setMessage(data.error ?? "Não foi possível duplicar o deck.");
+    setDecks((current) => [...current, data]);
+    setSavedOpen(true);
+    setMessage(`${data.name} foi criado.`);
+  }
+
   function newDeck() {
     if (decks.length >= 20) return setMessage("Você atingiu o limite de 20 decks.");
     reset(); setDeckId(undefined); setMessage("Novo deck iniciado. Escolha um nome único.");
@@ -95,12 +104,12 @@ export default function DeckBuilderPage() {
         <div className="flex gap-2"><button onClick={download} className="flex h-10 items-center gap-2 rounded-lg border border-edison-border px-4 text-sm"><Download className="h-4 w-4" /> Exportar</button><button onClick={save} disabled={saving} className="flex h-10 items-center gap-2 rounded-lg bg-edison-gold px-4 text-sm font-bold text-black disabled:opacity-50"><Save className="h-4 w-4" />{saving ? "Salvando" : "Salvar e equipar"}</button></div>
       </header>
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-        <SavedDecks decks={decks} open={savedOpen} onToggle={() => setSavedOpen((value) => !value)} preview={preview} onPreview={setPreview} onEquip={equipDeck} />
+        <SavedDecks decks={decks} open={savedOpen} onToggle={() => setSavedOpen((value) => !value)} preview={preview} onPreview={setPreview} onDuplicate={duplicateDeck} onEquip={equipDeck} />
         <button onClick={newDeck} className="rounded-xl border border-edison-border bg-edison-panel px-5 py-3 text-sm font-semibold hover:border-edison-gold">+ Novo deck</button>
       </div>
       {message && <p className="rounded-lg border border-edison-border bg-edison-panel px-4 py-3 text-sm text-gray-300">{message}</p>}
       <div className="grid gap-5 xl:grid-cols-[330px_1fr]">
-        <aside className="rounded-2xl border border-edison-border bg-edison-panel p-4 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)] xl:overflow-y-auto">
+        <aside className="self-start rounded-2xl border border-edison-border bg-edison-panel p-4 xl:sticky xl:top-4">
           <section>
             <h2 className="font-semibold">Main e Side Deck</h2>
             <p className="mb-4 mt-1 text-xs text-gray-500">
