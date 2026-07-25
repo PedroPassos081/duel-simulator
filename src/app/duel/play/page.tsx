@@ -424,13 +424,6 @@ export default function DuelPlayPage() {
             <div className="absolute right-1 top-1 z-10">
               <DuelistHud opponent />
             </div>
-            <div className="absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-lg bg-black/45 px-4 py-1 text-center backdrop-blur-sm">
-              <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/35">
-                Turno
-              </p>
-              <p className="font-mono text-xl font-black leading-5 text-edison-gold">01</p>
-            </div>
-
             <div className="flex min-h-[58px] items-start justify-center gap-1 pt-1">
               {Array.from({ length: 5 }, (_, index) => (
                 <CardBack key={index} small />
@@ -467,8 +460,14 @@ export default function DuelPlayPage() {
                   </button>
                 ))}
                 <button className="ml-2 rounded bg-red-700 px-4 py-1.5 text-[10px] font-black text-white transition hover:bg-red-600">
-                  Finalizar turno
+                  Terminar turno
                 </button>
+                <div className="ml-1 flex items-center gap-2 rounded border border-edison-gold/25 bg-edison-gold/10 px-3 py-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-white/45">
+                    Turno
+                  </span>
+                  <strong className="font-mono text-sm text-edison-gold">01</strong>
+                </div>
               </div>
             </div>
 
