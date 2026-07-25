@@ -146,15 +146,18 @@ model DeckCard {
 // ---------------- PARTIDAS (preparado para fase futura) ----------------
 
 model Match {
-  id           String    @id @default(cuid())
-  createdAt    DateTime  @default(now())
-  startedAt    DateTime?
-  finishedAt   DateTime?
-  format       String    @default("edison")
-  status       String    @default("waiting") // waiting | active | finished | cancelled
-  currentTurn  Int       @default(0)
-  currentPhase String    @default("waiting")
-  engineState  Json?
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  format        String    @default("edison")
+  status        String    @default("waiting") // waiting | active | finished | cancelled
+  currentTurn   Int       @default(0)
+  currentPhase  String    @default("waiting")
+  engineState   Json?
+  rpsRound      Int       @default(1)
+  rpsWinnerId   String?
+  firstPlayerId String?
 
   players MatchPlayer[]
   actions GameAction[]
@@ -164,13 +167,14 @@ model Match {
 }
 
 model MatchPlayer {
-  id      String  @id @default(cuid())
-  matchId String
-  match   Match   @relation(fields: [matchId], references: [id])
-  userId  String
-  user    User    @relation(fields: [userId], references: [id])
-  deckId  String
-  result  String?
+  id        String  @id @default(cuid())
+  matchId   String
+  match     Match   @relation(fields: [matchId], references: [id])
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  deckId    String
+  result    String?
+  rpsChoice String?
 
   @@unique([matchId, userId])
   @@index([matchId])
