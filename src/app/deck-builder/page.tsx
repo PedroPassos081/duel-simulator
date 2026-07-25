@@ -5,11 +5,10 @@ import { Download, Save, Search } from "lucide-react";
 import { CardGrid } from "@/components/CardGrid";
 import { DeckSection } from "@/components/DeckSection";
 import { DeckSummary } from "@/components/DeckSummary";
+import { SavedDecks, type SavedDeck } from "@/components/SavedDecks";
 import { useDeckBuilderStore } from "@/store/deck-builder-store";
 import { exportYdk } from "@/lib/ydk";
 import type { Card, DeckSection as Section } from "@/types/card";
-
-type SavedDeck = { id: string; name: string; isEquipped: boolean; cards: { cardId: number; section: Section; quantity: number; card: Card }[] };
 
 export default function DeckBuilderPage() {
   const [collection, setCollection] = useState<Card[]>([]);
@@ -18,12 +17,16 @@ export default function DeckBuilderPage() {
   const [deckId, setDeckId] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const { deckName, main, extra, side, setDeckName, addCard, removeCard, loadFromEntries } = useDeckBuilderStore();
+  const [decks, setDecks] = useState<SavedDeck[]>([]);
+  const [savedOpen, setSavedOpen] = useState(false);
+  const [preview, setPreview] = useState<SavedDeck>();
+  const { deckName, main, extra, side, setDeckName, addCard, removeCard, loadFromEntries, reset } = useDeckBuilderStore();
 
   useEffect(() => {
     Promise.all([fetch("/api/cards").then((r) => r.json()), fetch("/api/decks").then((r) => r.json())]).then(([cards, decks]: [Card[], SavedDeck[]]) => {
       const ownedCards = Array.isArray(cards) ? cards : [];
       setCollection(ownedCards);
+      setDecks(Array.isArray(decks) ? decks : []);
       const equipped = Array.isArray(decks) ? decks.find((d) => d.isEquipped) ?? decks[0] : undefined;
       if (equipped) {
         setDeckId(equipped.id); setDeckName(equipped.name);
@@ -40,7 +43,28 @@ export default function DeckBuilderPage() {
     setSaving(true); setMessage("");
     const res = await fetch("/api/decks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deckId, name: deckName, cards: entries }) });
     const data = await res.json(); setSaving(false);
-    if (res.ok) { setDeckId(data.id); setMessage("Deck equipado e salvo."); } else setMessage(data.issues?.map((i: { message: string }) => i.message).join(" ") ?? "Não foi possível salvar.");
+    if (res.ok) {
+      setDeckId(data.id); setMessage("Deck equipado e salvo.");
+      setDecks((current) => [data, ...current.filter((deck) => deck.id !== data.id)].map((deck) => ({ ...deck, isEquipped: deck.id === data.id })));
+    } else setMessage(data.error ?? data.issues?.map((i: { message: string }) => i.message).join(" ") ?? "Não foi possível salvar.");
+  }
+
+  function loadDeck(deck: SavedDeck) {
+    setDeckId(deck.id); setDeckName(deck.name);
+    loadFromEntries(deck.cards, new Map(deck.cards.map((item) => [item.cardId, { ...item.card, ownedQuantity: collection.find((card) => card.id === item.cardId)?.ownedQuantity }])));
+  }
+
+  async function equipDeck(deck: SavedDeck) {
+    const res = await fetch(`/api/decks/${deck.id}`, { method: "PATCH" });
+    if (!res.ok) return setMessage("Não foi possível equipar o deck.");
+    loadDeck(deck); setPreview(undefined);
+    setDecks((current) => current.map((item) => ({ ...item, isEquipped: item.id === deck.id })));
+    setMessage(`${deck.name} foi equipado.`);
+  }
+
+  function newDeck() {
+    if (decks.length >= 20) return setMessage("Você atingiu o limite de 20 decks.");
+    reset(); setDeckId(undefined); setMessage("Novo deck iniciado. Escolha um nome único.");
   }
 
   function download() {
@@ -70,6 +94,10 @@ export default function DeckBuilderPage() {
         <div className="flex-1"><p className="text-xs font-medium uppercase tracking-wider text-edison-gold">Deck equipado</p><input value={deckName} onChange={(e) => setDeckName(e.target.value)} className="mt-1 w-full bg-transparent text-xl font-bold outline-none" /></div>
         <div className="flex gap-2"><button onClick={download} className="flex h-10 items-center gap-2 rounded-lg border border-edison-border px-4 text-sm"><Download className="h-4 w-4" /> Exportar</button><button onClick={save} disabled={saving} className="flex h-10 items-center gap-2 rounded-lg bg-edison-gold px-4 text-sm font-bold text-black disabled:opacity-50"><Save className="h-4 w-4" />{saving ? "Salvando" : "Salvar e equipar"}</button></div>
       </header>
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+        <SavedDecks decks={decks} open={savedOpen} onToggle={() => setSavedOpen((value) => !value)} preview={preview} onPreview={setPreview} onEquip={equipDeck} />
+        <button onClick={newDeck} className="rounded-xl border border-edison-border bg-edison-panel px-5 py-3 text-sm font-semibold hover:border-edison-gold">+ Novo deck</button>
+      </div>
       {message && <p className="rounded-lg border border-edison-border bg-edison-panel px-4 py-3 text-sm text-gray-300">{message}</p>}
       <div className="grid gap-5 xl:grid-cols-[330px_1fr]">
         <aside className="rounded-2xl border border-edison-border bg-edison-panel p-4 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)] xl:overflow-y-auto">
