@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Bot, Clock3, Swords } from "lucide-react";
+import { ArrowLeft, Bot, Clock3, Eye, Swords } from "lucide-react";
 import type { Card, DeckSection } from "@/types/card";
 
 type EquippedDeck = {
@@ -61,21 +61,106 @@ function EmptyZone({
 function ZoneRow({
   opponent = false,
   kind,
+  cards = [],
+  onSelect,
 }: {
   opponent?: boolean;
   kind: "monster" | "spell";
+  cards?: Card[];
+  onSelect?: (card: Card) => void;
 }) {
   const pink = kind === "spell";
   return (
     <div className={`grid grid-cols-5 gap-[clamp(5px,0.7vw,10px)] ${opponent ? "rotate-180" : ""}`}>
-      {Array.from({ length: 5 }, (_, index) => (
-        <EmptyZone
-          key={index}
-          accent={pink ? "pink" : "blue"}
-          label={pink ? "S/T" : "Monstro"}
-        />
-      ))}
+      {Array.from({ length: 5 }, (_, index) => {
+        const card = cards[index];
+        return card?.imageUrl ? (
+          <button
+            key={`${card.id}-${index}`}
+            onClick={() => onSelect?.(card)}
+            className="group relative aspect-[0.72] min-h-0 overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110"
+            title={`Ver ${card.name}`}
+          >
+            <Image
+              src={card.imageUrl}
+              alt={card.name}
+              fill
+              sizes="100px"
+              className="object-cover"
+              unoptimized
+            />
+            <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-black/80 py-1 text-[7px] font-bold opacity-0 transition group-hover:opacity-100">
+              <Eye className="h-2.5 w-2.5" /> Ver carta
+            </span>
+          </button>
+        ) : (
+          <EmptyZone
+            key={index}
+            accent={pink ? "pink" : "blue"}
+            label={pink ? "Spell / Trap" : "Monstro"}
+          />
+        );
+      })}
     </div>
+  );
+}
+
+function CardInspector({ card }: { card?: Card }) {
+  return (
+    <aside className="flex h-[calc(100vh-82px)] max-h-[900px] flex-col overflow-hidden rounded-xl border border-white/10 bg-black/55 backdrop-blur-md">
+      <div className="border-b border-white/10 px-4 py-3">
+        <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-edison-gold">
+          <Eye className="h-4 w-4" /> Carta selecionada
+        </p>
+      </div>
+      {card ? (
+        <>
+          <div className="p-4 pb-3">
+            <div className="relative mx-auto aspect-[421/614] w-full max-w-[205px] overflow-hidden rounded shadow-2xl">
+              {card.imageUrl ? (
+                <Image
+                  src={card.imageUrl}
+                  alt={card.name}
+                  fill
+                  sizes="240px"
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                <CardBack />
+              )}
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto border-t border-white/10 p-4">
+            <h2 className="text-base font-black leading-tight">{card.name}</h2>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-sky-300">
+              {card.type}
+              {card.race ? ` · ${card.race}` : ""}
+            </p>
+            {(card.atk !== null || card.def !== null) && (
+              <div className="mt-3 flex gap-2 font-mono text-xs font-black">
+                <span className="rounded bg-red-500/15 px-2 py-1 text-red-300">
+                  ATK {card.atk ?? "?"}
+                </span>
+                <span className="rounded bg-sky-500/15 px-2 py-1 text-sky-300">
+                  DEF {card.def ?? "?"}
+                </span>
+              </div>
+            )}
+            <p className="mt-3 whitespace-pre-line text-xs leading-5 text-white/70">
+              {card.description}
+            </p>
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center p-5 text-center text-white/30">
+          <Eye className="h-9 w-9" />
+          <p className="mt-3 text-xs leading-5">
+            Clique em uma carta da mão ou do campo para ler seus dados e efeito.
+          </p>
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -115,13 +200,18 @@ function PlayerPanel({
 export default function DuelPlayPage() {
   const [deck, setDeck] = useState<EquippedDeck>();
   const [loading, setLoading] = useState(true);
+  const [selectedCard, setSelectedCard] = useState<Card>();
 
   useEffect(() => {
     fetch("/api/decks")
       .then((response) => response.json())
       .then((decks: EquippedDeck[]) => {
         if (Array.isArray(decks)) {
-          setDeck(decks.find((item) => item.isEquipped));
+          const equippedDeck = decks.find((item) => item.isEquipped);
+          setDeck(equippedDeck);
+          setSelectedCard(
+            equippedDeck?.cards.find((item) => item.section === "main")?.card
+          );
         }
       })
       .finally(() => setLoading(false));
@@ -140,6 +230,17 @@ export default function DuelPlayPage() {
       .filter((item) => item.section === "extra")
       .reduce((total, item) => total + item.quantity, 0) ?? 0;
   const hand = mainDeck.slice(0, 5);
+  const fieldMonsters = mainDeck
+    .filter(
+      (card) => !card.type.toLowerCase().includes("spell") && !card.type.toLowerCase().includes("trap")
+    )
+    .slice(0, 1);
+  const fieldSpellTraps = mainDeck
+    .filter((card) => {
+      const type = card.type.toLowerCase();
+      return type.includes("spell") || type.includes("trap");
+    })
+    .slice(0, 2);
 
   return (
     <div className="fixed inset-0 z-50 overflow-auto bg-[#080b12] text-white">
@@ -165,31 +266,8 @@ export default function DuelPlayPage() {
         </div>
       </header>
 
-      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-56px)] min-w-[980px] max-w-[1440px] grid-cols-[160px_minmax(650px,1fr)_160px] items-center gap-4 px-4 py-3">
-        <aside className="flex h-full flex-col items-center justify-between py-4">
-          <PlayerPanel opponent />
-          <div className="w-full space-y-1">
-            <p className="mb-2 text-center text-[10px] uppercase tracking-widest text-white/30">
-              Fases do turno
-            </p>
-            {PHASES.map((phase, index) => (
-              <button
-                key={phase}
-                className={`h-8 w-full border text-xs font-bold transition ${
-                  index === 0
-                    ? "border-emerald-400 bg-emerald-600 text-white"
-                    : "border-white/10 bg-black/40 text-white/40 hover:bg-white/10"
-                }`}
-              >
-                {phase}
-              </button>
-            ))}
-          </div>
-          <div className="rounded-lg border border-white/10 bg-black/40 px-5 py-3 text-center">
-            <p className="text-[10px] uppercase tracking-widest text-white/30">Turno</p>
-            <p className="mt-1 text-xl font-black">1</p>
-          </div>
-        </aside>
+      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-56px)] min-w-[1120px] max-w-[1540px] grid-cols-[260px_minmax(650px,1fr)_170px] items-center gap-4 px-4 py-3">
+        <CardInspector card={selectedCard} />
 
         <main className="relative mx-auto flex h-[calc(100vh-82px)] max-h-[900px] w-full max-w-[820px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-3 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,transparent_0,transparent_28%,rgba(168,85,247,.5)_29%,transparent_30%,transparent_43%,rgba(34,211,238,.35)_44%,transparent_45%)]" />
@@ -240,8 +318,26 @@ export default function DuelPlayPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <ZoneRow kind="monster" />
-                <ZoneRow kind="spell" />
+                <div>
+                  <p className="mb-1 text-center text-[8px] font-bold uppercase tracking-[0.22em] text-sky-200/55">
+                    Zonas de monstros
+                  </p>
+                  <ZoneRow
+                    kind="monster"
+                    cards={fieldMonsters}
+                    onSelect={setSelectedCard}
+                  />
+                </div>
+                <div>
+                  <p className="mb-1 text-center text-[8px] font-bold uppercase tracking-[0.22em] text-fuchsia-200/65">
+                    Zonas de Spell / Trap
+                  </p>
+                  <ZoneRow
+                    kind="spell"
+                    cards={fieldSpellTraps}
+                    onSelect={setSelectedCard}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <EmptyZone accent="blue" label="Extra" />
@@ -257,8 +353,9 @@ export default function DuelPlayPage() {
               {!loading &&
                 hand.map((card, index) =>
                   card.imageUrl ? (
-                    <div
+                    <button
                       key={`${card.id}-${index}`}
+                      onClick={() => setSelectedCard(card)}
                       className="group relative h-[clamp(68px,9vh,100px)] aspect-[421/614] transition hover:z-10 hover:-translate-y-3 hover:scale-125"
                     >
                       <Image
@@ -269,7 +366,7 @@ export default function DuelPlayPage() {
                         className="rounded object-cover shadow-xl"
                         unoptimized
                       />
-                    </div>
+                    </button>
                   ) : (
                     <CardBack key={`${card.id}-${index}`} small />
                   )
@@ -279,7 +376,25 @@ export default function DuelPlayPage() {
         </main>
 
         <aside className="flex h-full flex-col items-center justify-between py-4">
+          <PlayerPanel opponent />
           <PlayerPanel deckName={deck?.name} />
+          <div className="w-full space-y-1">
+            <p className="mb-2 text-center text-[10px] uppercase tracking-widest text-white/30">
+              Fases
+            </p>
+            {PHASES.map((phase, index) => (
+              <button
+                key={phase}
+                className={`h-7 w-full border text-[10px] font-bold transition ${
+                  index === 0
+                    ? "border-emerald-400 bg-emerald-600 text-white"
+                    : "border-white/10 bg-black/40 text-white/40 hover:bg-white/10"
+                }`}
+              >
+                {phase}
+              </button>
+            ))}
+          </div>
           <div className="w-full rounded-xl border border-white/10 bg-black/45 p-3 backdrop-blur-md">
             <p className="text-xs font-bold">Estado da partida</p>
             <div className="mt-3 space-y-2 text-[10px] text-white/45">
