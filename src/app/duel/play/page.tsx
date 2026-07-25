@@ -299,12 +299,27 @@ export default function DuelPlayPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 py-1">
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-sky-400/50 to-transparent" />
-              <span className="rounded-full border border-white/10 bg-black/40 px-4 py-1 text-[9px] font-bold uppercase tracking-[0.25em] text-white/40">
-                Campo de duelo
-              </span>
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-fuchsia-400/50 to-transparent" />
+            <div className="rounded-xl border border-white/10 bg-black/45 px-3 py-2 shadow-lg backdrop-blur-sm">
+              <div className="flex items-center justify-center gap-1.5">
+                {PHASES.map((phase, index) => (
+                  <button
+                    key={phase}
+                    className={`min-w-11 rounded px-3 py-1.5 text-[10px] font-black transition ${
+                      index === 2
+                        ? "bg-emerald-600 text-white shadow-[0_0_14px_rgba(22,163,74,0.35)]"
+                        : "border border-white/10 bg-white/10 text-white/50 hover:bg-white/15 hover:text-white"
+                    }`}
+                  >
+                    {phase}
+                  </button>
+                ))}
+                <button className="ml-2 rounded bg-red-700 px-4 py-1.5 text-[10px] font-black text-white transition hover:bg-red-600">
+                  Finalizar turno
+                </button>
+              </div>
+              <p className="mt-1.5 text-center text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-300">
+                Fase atual · Main Phase 1
+              </p>
             </div>
 
             <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3">
@@ -378,22 +393,12 @@ export default function DuelPlayPage() {
         <aside className="flex h-full flex-col items-center justify-between py-4">
           <PlayerPanel opponent />
           <PlayerPanel deckName={deck?.name} />
-          <div className="w-full space-y-1">
-            <p className="mb-2 text-center text-[10px] uppercase tracking-widest text-white/30">
-              Fases
+          <div className="w-full rounded-xl border border-emerald-400/20 bg-emerald-500/[0.06] p-3 text-center">
+            <p className="text-[9px] uppercase tracking-widest text-white/35">
+              Turno atual
             </p>
-            {PHASES.map((phase, index) => (
-              <button
-                key={phase}
-                className={`h-7 w-full border text-[10px] font-bold transition ${
-                  index === 0
-                    ? "border-emerald-400 bg-emerald-600 text-white"
-                    : "border-white/10 bg-black/40 text-white/40 hover:bg-white/10"
-                }`}
-              >
-                {phase}
-              </button>
-            ))}
+            <p className="mt-1 text-xl font-black text-emerald-300">01</p>
+            <p className="text-[9px] font-bold text-white/45">Sua vez</p>
           </div>
           <div className="w-full rounded-xl border border-white/10 bg-black/45 p-3 backdrop-blur-md">
             <p className="text-xs font-bold">Estado da partida</p>
