@@ -359,6 +359,7 @@ function DuelistHud({ opponent = false }: { opponent?: boolean }) {
 function PreDuelGate({ roomId }: { roomId: string }) {
   const [room, setRoom] = useState<RoomState>();
   const [sending, setSending] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -400,6 +401,18 @@ function PreDuelGate({ roomId }: { roomId: string }) {
     setSending(false);
   }
 
+  async function cancelSearch() {
+    setCancelling(true);
+    const response = await fetch(`/api/duel/rooms/${roomId}`, {
+      method: "DELETE",
+    });
+    if (response.ok) {
+      window.location.href = "/duel";
+      return;
+    }
+    setCancelling(false);
+  }
+
   return (
     <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[#080b12]/95 p-6 backdrop-blur-lg">
       <section className="w-full max-w-xl rounded-3xl border border-edison-gold/25 bg-[#15131b] p-8 text-center shadow-2xl">
@@ -410,6 +423,14 @@ function PreDuelGate({ roomId }: { roomId: string }) {
             <p className="mt-2 text-sm text-white/50">
               Você está na fila. A partida abrirá quando outro jogador apertar Jogar.
             </p>
+            <button
+              type="button"
+              onClick={cancelSearch}
+              disabled={cancelling}
+              className="mt-7 rounded-xl border border-red-400/30 bg-red-500/10 px-6 py-3 text-sm font-black text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {cancelling ? "Cancelando..." : "Cancelar busca"}
+            </button>
           </>
         ) : room.status === "rps" ? (
           <>
