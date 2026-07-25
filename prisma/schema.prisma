@@ -121,9 +121,12 @@ model Deck {
   userId    String?
   user      User?      @relation(fields: [userId], references: [id])
   format    String     @default("edison")
+  isEquipped Boolean   @default(false)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   cards     DeckCard[]
+
+  @@index([userId, isEquipped])
 }
 
 model DeckCard {
