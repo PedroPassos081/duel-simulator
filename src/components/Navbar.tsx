@@ -38,6 +38,9 @@ export async function Navbar() {
           <Link href="/shop" className="text-sm text-gray-300 hover:text-white transition-colors">
             Loja
           </Link>
+          <Link href="/duel" className="text-sm text-gray-300 hover:text-white transition-colors">
+            Duelo
+          </Link>
         </nav>
 
         <div className="flex items-center gap-4 text-sm">
