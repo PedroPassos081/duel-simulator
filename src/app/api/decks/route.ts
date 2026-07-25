@@ -33,6 +33,23 @@ export async function POST(req: Request) {
   }
   const { id, name, cards } = parsed.data;
 
+  const duplicateName = await prisma.deck.findFirst({
+    where: { userId, name, ...(id ? { id: { not: id } } : {}) },
+  });
+  if (duplicateName) {
+    return NextResponse.json(
+      { error: "Você já possui um deck com esse nome." },
+      { status: 409 }
+    );
+  }
+
+  if (!id && (await prisma.deck.count({ where: { userId } })) >= 20) {
+    return NextResponse.json(
+      { error: "Você atingiu o limite de 20 decks salvos." },
+      { status: 422 }
+    );
+  }
+
   const banlist = await prisma.banlistEntry.findMany({ where: { format: "edison" } });
   const ownerships = await prisma.userCardOwnership.findMany({ where: { userId } });
 
