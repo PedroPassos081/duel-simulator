@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { CircleDollarSign, Gem } from "lucide-react";
 import type { Card } from "@/types/card";
 
@@ -16,13 +17,16 @@ interface ShopListing {
 }
 
 export default function ShopPage() {
+  const searchParams = useSearchParams();
   const [listings, setListings] = useState<ShopListing[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [selectedListing, setSelectedListing] = useState<ShopListing | null>(null);
 
   // Estados dos Filtros
-  const [searchName, setSearchName] = useState("");
+  const [searchName, setSearchName] = useState(
+    () => searchParams.get("q")?.trim() ?? ""
+  );
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "MONSTER" | "SPELL" | "TRAP">("ALL");
   const [attributeFilter, setAttributeFilter] = useState<string>("");
   const [monsterRaceFilter, setMonsterRaceFilter] = useState<string>("");
