@@ -1,112 +1,72 @@
 "use client";
 
-import { useState } from "react";
-import { CardSearch } from "@/components/CardSearch";
+import { useEffect, useState } from "react";
+import { Download, Save, Search } from "lucide-react";
 import { CardGrid } from "@/components/CardGrid";
 import { DeckSection } from "@/components/DeckSection";
 import { DeckSummary } from "@/components/DeckSummary";
 import { useDeckBuilderStore } from "@/store/deck-builder-store";
 import { exportYdk } from "@/lib/ydk";
-import type { Card, DeckSection as DeckSectionType } from "@/types/card";
+import type { Card, DeckSection as Section } from "@/types/card";
+
+type SavedDeck = { id: string; name: string; isEquipped: boolean; cards: { cardId: number; section: Section; quantity: number; card: Card }[] };
 
 export default function DeckBuilderPage() {
-  const [searchResults, setSearchResults] = useState<Card[]>([]);
+  const [collection, setCollection] = useState<Card[]>([]);
+  const [query, setQuery] = useState("");
+  const [deckId, setDeckId] = useState<string>();
   const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const { deckName, main, extra, side, setDeckName, addCard, removeCard, loadFromEntries } = useDeckBuilderStore();
 
-  const { deckName, main, extra, side, setDeckName, addCard, removeCard } =
-    useDeckBuilderStore();
-
-  const banlist = [
-    // Em produção isso vem de /api/banlist; mantido inline para simplicidade do MVP.
-  ] as { cardId: number; status: any }[];
-
-  function handleAdd(card: Card, section: DeckSectionType) {
-    addCard(card, section);
-  }
-
-  function handleExport() {
-    const entries = [...main, ...extra, ...side].map((e) => ({
-      cardId: e.card.id,
-      section: e.section,
-      quantity: e.quantity,
-    }));
-    const ydk = exportYdk(entries, deckName);
-    const blob = new Blob([ydk], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${deckName}.ydk`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    setSaveMessage(null);
-
-    const entries = [...main, ...extra, ...side].map((e) => ({
-      cardId: e.card.id,
-      section: e.section,
-      quantity: e.quantity,
-    }));
-
-    const res = await fetch("/api/decks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: deckName, cards: entries }),
+  useEffect(() => {
+    Promise.all([fetch("/api/cards").then((r) => r.json()), fetch("/api/decks").then((r) => r.json())]).then(([cards, decks]: [Card[], SavedDeck[]]) => {
+      const ownedCards = Array.isArray(cards) ? cards : [];
+      setCollection(ownedCards);
+      const equipped = Array.isArray(decks) ? decks.find((d) => d.isEquipped) ?? decks[0] : undefined;
+      if (equipped) {
+        setDeckId(equipped.id); setDeckName(equipped.name);
+        loadFromEntries(equipped.cards, new Map(equipped.cards.map((item) => [item.cardId, { ...item.card, ownedQuantity: ownedCards.find((c) => c.id === item.cardId)?.ownedQuantity }])));
+      }
     });
+  }, [loadFromEntries, setDeckName]);
 
-    setSaving(false);
+  const used = (id: number) => [...main, ...extra, ...side].filter((e) => e.card.id === id).reduce((n, e) => n + e.quantity, 0);
+  function handleAdd(card: Card, section: Section) { if (used(card.id) < (card.ownedQuantity ?? 0)) addCard(card, section); }
+  const entries = [...main, ...extra, ...side].map((e) => ({ cardId: e.card.id, section: e.section, quantity: e.quantity }));
 
-    if (res.ok) {
-      setSaveMessage("Deck salvo com sucesso.");
-    } else {
-      const data = await res.json();
-      setSaveMessage(
-        data.issues
-          ? `Não foi possível salvar: ${data.issues.map((i: any) => i.message).join(" ")}`
-          : "Erro ao salvar o deck. Faça login primeiro."
-      );
-    }
+  async function save() {
+    setSaving(true); setMessage("");
+    const res = await fetch("/api/decks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deckId, name: deckName, cards: entries }) });
+    const data = await res.json(); setSaving(false);
+    if (res.ok) { setDeckId(data.id); setMessage("Deck equipado e salvo."); } else setMessage(data.issues?.map((i: { message: string }) => i.message).join(" ") ?? "Não foi possível salvar.");
   }
 
+  function download() {
+    const blob = new Blob([exportYdk(entries, deckName)], { type: "text/plain" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${deckName}.ydk`; a.click(); URL.revokeObjectURL(url);
+  }
+
+  const filtered = collection.filter((card) => card.name.toLowerCase().includes(query.toLowerCase()));
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <div className="flex flex-col gap-3">
-        <input
-          value={deckName}
-          onChange={(e) => setDeckName(e.target.value)}
-          className="rounded border border-edison-border bg-edison-panel px-3 py-2 text-sm font-medium"
-        />
-        <CardSearch onResults={setSearchResults} />
-        <CardGrid cards={searchResults} onAdd={handleAdd} />
-      </div>
-
-      <div className="flex flex-col gap-6">
-        <DeckSection section="main" entries={main} onRemove={(id) => removeCard(id, "main")} />
-        <DeckSection section="extra" entries={extra} onRemove={(id) => removeCard(id, "extra")} />
-        <DeckSection section="side" entries={side} onRemove={(id) => removeCard(id, "side")} />
-      </div>
-
-      <div className="flex flex-col gap-4">
-        <DeckSummary main={main} extra={extra} side={side} banlist={banlist} />
-        <div className="flex gap-2">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex-1 rounded bg-edison-gold px-3 py-2 text-sm font-medium text-black hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? "Salvando..." : "Salvar deck"}
-          </button>
-          <button
-            onClick={handleExport}
-            className="flex-1 rounded border border-edison-border px-3 py-2 text-sm hover:bg-edison-panel"
-          >
-            Exportar .ydk
-          </button>
-        </div>
-        {saveMessage && <p className="text-sm text-gray-400">{saveMessage}</p>}
+    <div className="space-y-5 py-3">
+      <header className="flex flex-col gap-4 rounded-2xl border border-edison-border bg-edison-panel p-4 sm:flex-row sm:items-center">
+        <div className="flex-1"><p className="text-xs font-medium uppercase tracking-wider text-edison-gold">Deck equipado</p><input value={deckName} onChange={(e) => setDeckName(e.target.value)} className="mt-1 w-full bg-transparent text-xl font-bold outline-none" /></div>
+        <div className="flex gap-2"><button onClick={download} className="flex h-10 items-center gap-2 rounded-lg border border-edison-border px-4 text-sm"><Download className="h-4 w-4" /> Exportar</button><button onClick={save} disabled={saving} className="flex h-10 items-center gap-2 rounded-lg bg-edison-gold px-4 text-sm font-bold text-black disabled:opacity-50"><Save className="h-4 w-4" />{saving ? "Salvando" : "Salvar e equipar"}</button></div>
+      </header>
+      {message && <p className="rounded-lg border border-edison-border bg-edison-panel px-4 py-3 text-sm text-gray-300">{message}</p>}
+      <div className="grid gap-5 xl:grid-cols-[330px_1fr]">
+        <aside className="rounded-2xl border border-edison-border bg-edison-panel p-4 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)] xl:overflow-y-auto">
+          <h2 className="font-semibold">Minha coleção</h2><p className="mb-4 mt-1 text-xs text-gray-500">Clique em uma carta para adicionar ao deck.</p>
+          <label className="mb-4 flex items-center gap-2 rounded-lg border border-edison-border bg-black/20 px-3"><Search className="h-4 w-4 text-gray-500" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar nas minhas cartas" className="h-10 w-full bg-transparent text-sm outline-none" /></label>
+          <CardGrid cards={filtered} onAdd={handleAdd} />
+        </aside>
+        <main className="space-y-4">
+          <DeckSummary main={main} extra={extra} side={side} banlist={[]} />
+          <DeckSection section="main" entries={main} onRemove={(id) => removeCard(id, "main")} />
+          <DeckSection section="extra" entries={extra} onRemove={(id) => removeCard(id, "extra")} />
+          <DeckSection section="side" entries={side} onRemove={(id) => removeCard(id, "side")} />
+        </main>
       </div>
     </div>
   );
