@@ -69,10 +69,8 @@ export async function POST() {
       return tx.match.update({
         where: { id: waiting.id },
         data: {
-          status: "active",
-          startedAt: new Date(),
-          currentTurn: 1,
-          currentPhase: "draw",
+          status: "rps",
+          currentPhase: "rps",
         },
         include: { players: true },
       });
