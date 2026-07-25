@@ -32,11 +32,17 @@ export async function POST(req: Request) {
 
   const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
 
-  const user = await prisma.user.create({
-    data: { name, username, email, passwordHash },
+  // Usuário e carteira são gravados juntos. Se uma operação falhar,
+  // nenhuma das duas fica incompleta no banco.
+  await prisma.user.create({
+    data: {
+      name,
+      username,
+      email,
+      passwordHash,
+      wallet: { create: {} },
+    },
   });
-
-  await prisma.wallet.create({ data: { userId: user.id } });
 
   try {
     const code = await createVerificationCode(email);
