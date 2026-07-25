@@ -12,8 +12,8 @@ export async function GET() {
 
   const decks = await prisma.deck.findMany({
     where: { userId: (session.user as { id: string }).id },
-    include: { cards: true },
-    orderBy: { updatedAt: "desc" },
+    include: { cards: { include: { card: true } } },
+    orderBy: [{ isEquipped: "desc" }, { updatedAt: "desc" }],
   });
 
   return NextResponse.json(decks);
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { name, cards } = parsed.data;
+  const { id, name, cards } = parsed.data;
 
   const banlist = await prisma.banlistEntry.findMany({ where: { format: "edison" } });
   const ownerships = await prisma.userCardOwnership.findMany({ where: { userId } });
@@ -46,19 +46,38 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Deck inválido.", issues }, { status: 422 });
   }
 
-  const deck = await prisma.deck.create({
-    data: {
-      name,
-      userId,
-      cards: {
-        create: cards.map((c) => ({
-          cardId: c.cardId,
-          section: c.section,
-          quantity: c.quantity,
-        })),
+  const cardData = cards.map((c) => ({
+    cardId: c.cardId,
+    section: c.section,
+    quantity: c.quantity,
+  }));
+
+  const deck = await prisma.$transaction(async (tx) => {
+    await tx.deck.updateMany({
+      where: { userId, isEquipped: true },
+      data: { isEquipped: false },
+    });
+
+    if (id) {
+      const ownedDeck = await tx.deck.findFirst({ where: { id, userId } });
+      if (!ownedDeck) throw new Error("DECK_NOT_FOUND");
+      await tx.deckCard.deleteMany({ where: { deckId: id } });
+      return tx.deck.update({
+        where: { id },
+        data: { name, isEquipped: true, cards: { create: cardData } },
+        include: { cards: { include: { card: true } } },
+      });
+    }
+
+    return tx.deck.create({
+      data: {
+        name,
+        userId,
+        isEquipped: true,
+        cards: { create: cardData },
       },
-    },
-    include: { cards: true },
+      include: { cards: { include: { card: true } } },
+    });
   });
 
   return NextResponse.json(deck, { status: 201 });
