@@ -8,7 +8,10 @@ import {
   Eye,
   Loader2,
   MessageCircle,
+  Circle,
+  Hand,
   ScrollText,
+  Scissors,
   Send,
   Swords,
   X,
@@ -20,6 +23,21 @@ type EquippedDeck = {
   name: string;
   isEquipped: boolean;
   cards: { section: DeckSection; quantity: number; card: Card }[];
+};
+
+type RoomState = {
+  id: string;
+  status: "waiting" | "rps" | "choosing" | "active";
+  meId: string;
+  rpsRound: number;
+  rpsWinnerId?: string;
+  firstPlayerId?: string;
+  players: {
+    id: string;
+    nickname: string;
+    choiceSubmitted: boolean;
+    rpsChoice?: "rock" | "paper" | "scissors";
+  }[];
 };
 
 const PHASES = ["DP", "SP", "MP1", "BP", "MP2", "EP"];
@@ -321,7 +339,7 @@ function DuelistHud({ opponent = false }: { opponent?: boolean }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-black">
-          {opponent ? "CPU Edison" : "Você"}
+          {opponent ? "Oponente" : "Você"}
         </p>
         <div className="mt-1 flex items-center gap-2">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/40">
@@ -338,7 +356,122 @@ function DuelistHud({ opponent = false }: { opponent?: boolean }) {
   );
 }
 
+function PreDuelGate({ roomId }: { roomId: string }) {
+  const [room, setRoom] = useState<RoomState>();
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function refresh() {
+      const response = await fetch(`/api/duel/rooms/${roomId}`, {
+        cache: "no-store",
+      });
+      if (response.ok && active) setRoom(await response.json());
+    }
+    refresh();
+    const timer = window.setInterval(refresh, 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [roomId]);
+
+  if (room?.status === "active") return null;
+  const me = room?.players.find((player) => player.id === room.meId);
+  const winner = room?.rpsWinnerId === room?.meId;
+
+  async function chooseRps(choice: "rock" | "paper" | "scissors") {
+    setSending(true);
+    await fetch(`/api/duel/rooms/${roomId}/rps`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ choice }),
+    });
+    setSending(false);
+  }
+
+  async function chooseOrder(goFirst: boolean) {
+    setSending(true);
+    await fetch(`/api/duel/rooms/${roomId}/order`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goFirst }),
+    });
+    setSending(false);
+  }
+
+  return (
+    <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[#080b12]/95 p-6 backdrop-blur-lg">
+      <section className="w-full max-w-xl rounded-3xl border border-edison-gold/25 bg-[#15131b] p-8 text-center shadow-2xl">
+        {!room || room.status === "waiting" ? (
+          <>
+            <Loader2 className="mx-auto h-12 w-12 animate-spin text-edison-gold" />
+            <h1 className="mt-5 text-2xl font-black">Procurando oponente</h1>
+            <p className="mt-2 text-sm text-white/50">
+              Você está na fila. A partida abrirá quando outro jogador apertar Jogar.
+            </p>
+          </>
+        ) : room.status === "rps" ? (
+          <>
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-edison-gold">
+              Rodada {room.rpsRound}
+            </p>
+            <h1 className="mt-2 text-2xl font-black">Pedra, papel ou tesoura</h1>
+            <p className="mt-2 text-sm text-white/50">
+              {me?.choiceSubmitted
+                ? "Escolha enviada. Aguardando o outro duelista."
+                : "Escolha uma opção. Ela ficará escondida até os dois responderem."}
+            </p>
+            <div className="mt-7 grid grid-cols-3 gap-3">
+              {[
+                { value: "rock" as const, label: "Pedra", Icon: Circle },
+                { value: "paper" as const, label: "Papel", Icon: Hand },
+                { value: "scissors" as const, label: "Tesoura", Icon: Scissors },
+              ].map(({ value, label, Icon }) => (
+                <button
+                  key={value}
+                  onClick={() => chooseRps(value)}
+                  disabled={sending || me?.choiceSubmitted}
+                  className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-5 font-black transition hover:border-edison-gold hover:bg-edison-gold/10 disabled:opacity-40"
+                >
+                  <Icon className="h-9 w-9" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : winner ? (
+          <>
+            <Swords className="mx-auto h-12 w-12 text-edison-gold" />
+            <h1 className="mt-4 text-2xl font-black">Você venceu</h1>
+            <p className="mt-2 text-sm text-white/50">
+              Escolha a ordem do duelo.
+            </p>
+            <div className="mt-7 grid grid-cols-2 gap-3">
+              <button onClick={() => chooseOrder(true)} disabled={sending} className="rounded-xl bg-edison-gold px-5 py-4 font-black text-black disabled:opacity-50">
+                Quero começar
+              </button>
+              <button onClick={() => chooseOrder(false)} disabled={sending} className="rounded-xl border border-white/15 bg-white/5 px-5 py-4 font-black disabled:opacity-50">
+                Quero ir em segundo
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <Loader2 className="mx-auto h-12 w-12 animate-spin text-white/50" />
+            <h1 className="mt-5 text-2xl font-black">Aguardando a escolha</h1>
+            <p className="mt-2 text-sm text-white/50">
+              O vencedor está escolhendo quem começa.
+            </p>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
 export default function DuelPlayPage() {
+  const [roomId, setRoomId] = useState<string>();
   const [deck, setDeck] = useState<EquippedDeck>();
   const [loading, setLoading] = useState(true);
   const [selectedCard, setSelectedCard] = useState<Card>();
@@ -346,6 +479,7 @@ export default function DuelPlayPage() {
   const [opponentDeckCount, setOpponentDeckCount] = useState(35);
 
   useEffect(() => {
+    setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
     fetch("/api/decks")
       .then((response) => response.json())
       .then((decks: EquippedDeck[]) => {
@@ -408,6 +542,7 @@ export default function DuelPlayPage() {
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-[#080b12] text-white">
+      {roomId && <PreDuelGate roomId={roomId} />}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
 
