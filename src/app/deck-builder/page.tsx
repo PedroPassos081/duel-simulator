@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Save, Search } from "lucide-react";
+import { ArrowRight, Download, Save, Search, ShoppingBag } from "lucide-react";
 import { CardGrid } from "@/components/CardGrid";
 import { DeckSection } from "@/components/DeckSection";
 import { DeckSummary } from "@/components/DeckSummary";
@@ -14,6 +14,7 @@ type SavedDeck = { id: string; name: string; isEquipped: boolean; cards: { cardI
 export default function DeckBuilderPage() {
   const [collection, setCollection] = useState<Card[]>([]);
   const [query, setQuery] = useState("");
+  const [shopQuery, setShopQuery] = useState("");
   const [deckId, setDeckId] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -68,6 +69,47 @@ export default function DeckBuilderPage() {
           <DeckSection section="side" entries={side} onRemove={(id) => removeCard(id, "side")} />
         </main>
       </div>
+
+      <section className="relative overflow-hidden rounded-2xl border border-edison-gold/30 bg-gradient-to-r from-edison-panel to-amber-950/30 p-5 sm:p-7">
+        <div className="absolute -right-12 -top-16 h-44 w-44 rounded-full bg-edison-gold/10 blur-3xl" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-edison-gold text-black">
+              <ShoppingBag className="h-5 w-5" />
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-edison-gold">
+              Loja de cartas
+            </p>
+            <h2 className="mt-1 text-xl font-bold">
+              Não encontrou uma carta na sua coleção?
+            </h2>
+            <p className="mt-2 max-w-xl text-sm text-gray-400">
+              Pesquise no catálogo da loja e adquira novas cópias para completar
+              sua estratégia.
+            </p>
+          </div>
+
+          <form
+            action="/shop"
+            className="flex w-full max-w-xl flex-col gap-2 sm:flex-row"
+          >
+            <label className="flex h-11 flex-1 items-center gap-2 rounded-lg border border-edison-border bg-black/30 px-3 focus-within:border-edison-gold">
+              <Search className="h-4 w-4 text-gray-500" />
+              <input
+                name="q"
+                value={shopQuery}
+                onChange={(event) => setShopQuery(event.target.value)}
+                placeholder="Pesquisar uma carta na loja"
+                className="h-full w-full bg-transparent text-sm outline-none placeholder:text-gray-600"
+              />
+            </label>
+            <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-edison-gold px-5 text-sm font-bold text-black transition hover:brightness-110">
+              Buscar na loja
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </form>
+        </div>
+      </section>
     </div>
   );
 }
