@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bot, CirclePlay, Layers3, ShieldCheck, Swords } from "lucide-react";
+import {
+  CirclePlay,
+  Cpu,
+  Layers3,
+  Radio,
+  ShieldCheck,
+  Swords,
+  Users,
+} from "lucide-react";
 import type { Card, DeckSection } from "@/types/card";
 
 type EquippedDeck = {
@@ -12,17 +20,29 @@ type EquippedDeck = {
   cards: { section: DeckSection; quantity: number; card: Card }[];
 };
 
+type EngineStatus = {
+  available: boolean;
+  version: string | null;
+  cardDatabaseConfigured: boolean;
+  scriptsConfigured: boolean;
+  readyForDuels: boolean;
+};
+
 export default function DuelPage() {
   const [deck, setDeck] = useState<EquippedDeck>();
+  const [engine, setEngine] = useState<EngineStatus>();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/decks")
-      .then((response) => response.json())
-      .then((decks: EquippedDeck[]) => {
+    Promise.all([
+      fetch("/api/decks").then((response) => response.json()),
+      fetch("/api/duel/engine/status").then((response) => response.json()),
+    ])
+      .then(([decks, engineStatus]: [EquippedDeck[], EngineStatus]) => {
         if (Array.isArray(decks)) {
           setDeck(decks.find((item) => item.isEquipped));
         }
+        setEngine(engineStatus);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -72,11 +92,41 @@ export default function DuelPage() {
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-left">
             <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-              <Bot className="h-4 w-4" /> Adversário
+              <Users className="h-4 w-4" /> Adversário
             </p>
-            <p className="mt-2 text-lg font-bold">CPU Edison</p>
+            <p className="mt-2 text-lg font-bold">Jogador online</p>
             <p className="mt-1 text-xs text-gray-500">
-              Partida de teste contra o computador
+              A sala aguardará o segundo duelista
+            </p>
+          </div>
+        </div>
+
+        <div className="relative mx-auto mt-3 flex max-w-xl items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-left">
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              engine?.available
+                ? "bg-emerald-500/10 text-emerald-300"
+                : "bg-amber-500/10 text-amber-300"
+            }`}
+          >
+            {engine?.available ? (
+              <Cpu className="h-4 w-4" />
+            ) : (
+              <Radio className="h-4 w-4" />
+            )}
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white/85">
+              {loading
+                ? "Verificando motor..."
+                : engine?.available
+                  ? `OCGCore ${engine.version} conectado`
+                  : "Motor de duelo indisponível"}
+            </p>
+            <p className="mt-0.5 text-[11px] text-gray-500">
+              {engine?.readyForDuels
+                ? "Base de cartas e scripts de efeitos prontos"
+                : "Falta configurar a base de cartas e os scripts de efeitos"}
             </p>
           </div>
         </div>
@@ -88,7 +138,7 @@ export default function DuelPage() {
               className="flex h-12 items-center gap-2 rounded-xl bg-edison-gold px-7 text-sm font-black text-black transition hover:brightness-110"
             >
               <CirclePlay className="h-5 w-5" />
-              Começar duelo
+              Abrir campo
             </Link>
           ) : (
             <Link
