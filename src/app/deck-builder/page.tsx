@@ -14,6 +14,7 @@ type SavedDeck = { id: string; name: string; isEquipped: boolean; cards: { cardI
 export default function DeckBuilderPage() {
   const [collection, setCollection] = useState<Card[]>([]);
   const [query, setQuery] = useState("");
+  const [extraQuery, setExtraQuery] = useState("");
   const [deckId, setDeckId] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -47,7 +48,22 @@ export default function DeckBuilderPage() {
     const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${deckName}.ydk`; a.click(); URL.revokeObjectURL(url);
   }
 
-  const filtered = collection.filter((card) => card.name.toLowerCase().includes(query.toLowerCase()));
+  const isExtraDeckCard = (card: Card) =>
+    /fusion|synchro|xyz|link/i.test(card.type);
+
+  const filtered = collection.filter(
+    (card) =>
+      !isExtraDeckCard(card) &&
+      card.name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const extraDeckCards = collection
+    .filter(
+      (card) =>
+        isExtraDeckCard(card) &&
+        card.name.toLowerCase().includes(extraQuery.toLowerCase())
+    )
+    .slice(0, extraQuery ? 50 : 10);
   return (
     <div className="space-y-5 py-3">
       <header className="flex flex-col gap-4 rounded-2xl border border-edison-border bg-edison-panel p-4 sm:flex-row sm:items-center">
@@ -57,9 +73,46 @@ export default function DeckBuilderPage() {
       {message && <p className="rounded-lg border border-edison-border bg-edison-panel px-4 py-3 text-sm text-gray-300">{message}</p>}
       <div className="grid gap-5 xl:grid-cols-[330px_1fr]">
         <aside className="rounded-2xl border border-edison-border bg-edison-panel p-4 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)] xl:overflow-y-auto">
-          <h2 className="font-semibold">Minha coleção</h2><p className="mb-4 mt-1 text-xs text-gray-500">Clique em uma carta para adicionar ao deck.</p>
-          <label className="mb-4 flex items-center gap-2 rounded-lg border border-edison-border bg-black/20 px-3"><Search className="h-4 w-4 text-gray-500" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar nas minhas cartas" className="h-10 w-full bg-transparent text-sm outline-none" /></label>
-          <CardGrid cards={filtered} onAdd={handleAdd} />
+          <section>
+            <h2 className="font-semibold">Main e Side Deck</h2>
+            <p className="mb-4 mt-1 text-xs text-gray-500">
+              Monstros, Spells e Traps que você possui.
+            </p>
+            <label className="mb-4 flex items-center gap-2 rounded-lg border border-edison-border bg-black/20 px-3 focus-within:border-edison-gold">
+              <Search className="h-4 w-4 text-gray-500" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar para Main ou Side"
+                className="h-10 w-full bg-transparent text-sm outline-none"
+              />
+            </label>
+            <CardGrid cards={filtered} onAdd={handleAdd} />
+          </section>
+
+          <section className="mt-6 border-t border-edison-border pt-5">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-purple-300">Extra Deck</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Fusion, Synchro, Xyz e Link da sua coleção.
+                </p>
+              </div>
+              <span className="rounded-full bg-purple-400/10 px-2 py-1 text-[10px] font-semibold text-purple-300">
+                {collection.filter(isExtraDeckCard).length} cartas
+              </span>
+            </div>
+            <label className="mb-4 flex items-center gap-2 rounded-lg border border-purple-400/20 bg-purple-950/10 px-3 focus-within:border-purple-400">
+              <Search className="h-4 w-4 text-purple-300" />
+              <input
+                value={extraQuery}
+                onChange={(e) => setExtraQuery(e.target.value)}
+                placeholder="Buscar monstros do Extra Deck"
+                className="h-10 w-full bg-transparent text-sm outline-none"
+              />
+            </label>
+            <CardGrid cards={extraDeckCards} onAdd={handleAdd} />
+          </section>
         </aside>
         <main className="space-y-4">
           <DeckSummary main={main} extra={extra} side={side} banlist={[]} />
