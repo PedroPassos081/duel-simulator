@@ -384,18 +384,20 @@ export default function DuelPlayPage() {
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,transparent_0,transparent_28%,rgba(168,85,247,.5)_29%,transparent_30%,transparent_43%,rgba(34,211,238,.35)_44%,transparent_45%)]" />
 
           <div className="relative flex min-h-0 flex-1 flex-col justify-center gap-1">
-            <div className="flex items-center justify-between gap-4">
+            <div className="absolute left-1 top-1 z-10">
               <DuelistHud />
-              <div className="text-center">
-                <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/35">
-                  Turno
-                </p>
-                <p className="font-mono text-xl font-black text-edison-gold">01</p>
-              </div>
+            </div>
+            <div className="absolute right-1 top-1 z-10">
               <DuelistHud opponent />
             </div>
+            <div className="absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-lg bg-black/45 px-4 py-1 text-center backdrop-blur-sm">
+              <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/35">
+                Turno
+              </p>
+              <p className="font-mono text-xl font-black leading-5 text-edison-gold">01</p>
+            </div>
 
-            <div className="flex items-center justify-center gap-1">
+            <div className="flex min-h-[58px] items-start justify-center gap-1 pt-1">
               {Array.from({ length: 5 }, (_, index) => (
                 <CardBack key={index} small />
               ))}
@@ -478,7 +480,7 @@ export default function DuelPlayPage() {
               </div>
             </div>
 
-            <div className="flex h-[clamp(132px,20vh,190px)] items-end justify-center gap-2">
+            <div className="flex h-[clamp(132px,20vh,190px)] shrink-0 items-center justify-center gap-2 overflow-visible">
               {loading &&
                 Array.from({ length: 5 }, (_, index) => (
                   <CardBack key={index} small />
