@@ -5,7 +5,7 @@ para o formato Edison de Yu-Gi-Oh.
 
 ## O que está implementado neste MVP
 
-- ✅ Autenticação (Auth.js: registro + login por credenciais, senha com argon2id)
+- ✅ Autenticação (Auth.js: cadastro, código por e-mail, Google e login por e-mail/usuário)
 - ✅ Deck Builder (busca, Main/Extra/Side, validação de tamanho e banlist, import/export `.ydk`)
 - ✅ Economia (carteira gold/cash, ledger transacional `CurrencyTransaction`)
 - ✅ Loja (compra de cartas com gold e/ou cash, limite de 3 cópias por carta)
@@ -20,9 +20,6 @@ para o formato Edison de Yu-Gi-Oh.
 - ❌ Pagamento real de cash (Stripe/Mercado Pago) — o `Payment` model existe no schema, mas o
   fluxo de checkout/webhook não foi implementado. Ver seção 15 do documento de arquitetura para
   o desenho completo desse fluxo antes de implementar.
-- ❌ Envio de e-mail de verificação real — hoje o registro marca `emailVerified` automaticamente
-  para o MVP rodar sem depender de um provedor de e-mail. Trocar por um fluxo de token +
-  Resend/SendGrid antes de ir para produção.
 - ❌ 2FA (o campo já existe no schema, mas a UI/lógica de TOTP não foi implementada)
 
 ## Como rodar localmente
@@ -56,6 +53,5 @@ Acesse http://localhost:3000
    Prisma Studio toda vez.
 2. Endpoint `GET /api/banlist` e conectar de verdade na `DeckSummary` (hoje está com array vazio
    inline, como simplificação do MVP).
-3. Fluxo real de verificação de e-mail antes de liberar compras.
-4. Prova de conceito do ocgcore compilado para WASM, isolada, fora do Next (fase 5 do roadmap
+3. Prova de conceito do ocgcore compilado para WASM, isolada, fora do Next (fase 5 do roadmap
    original).
