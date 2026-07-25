@@ -5,9 +5,10 @@
 // ==========================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "library"
 }
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -16,7 +17,7 @@ datasource db {
 // ---------------- CARTAS / BANLIST ----------------
 
 model Card {
-  id          Int      @id
+  id          Int     @id
   name        String
   type        String
   race        String?
@@ -60,7 +61,7 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   twoFactorSecret  String?
-  twoFactorEnabled Boolean @default(false)
+  twoFactorEnabled Boolean   @default(false)
   lastLoginAt      DateTime?
   lastLoginIp      String?
 
@@ -116,18 +117,18 @@ model Session {
 // ---------------- DECKS ----------------
 
 model Deck {
-  id        String     @id @default(cuid())
-  name      String
-  userId    String?
-  user      User?      @relation(fields: [userId], references: [id])
-  format    String     @default("edison")
-  isEquipped Boolean   @default(false)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  cards     DeckCard[]
+  id         String     @id @default(cuid())
+  name       String
+  userId     String?
+  user       User?      @relation(fields: [userId], references: [id])
+  format     String     @default("edison")
+  isEquipped Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  cards      DeckCard[]
 
-  @@index([userId, isEquipped])
   @@unique([userId, name])
+  @@index([userId, isEquipped])
 }
 
 model DeckCard {
@@ -145,14 +146,21 @@ model DeckCard {
 // ---------------- PARTIDAS (preparado para fase futura) ----------------
 
 model Match {
-  id         String        @id @default(cuid())
-  createdAt  DateTime      @default(now())
-  finishedAt DateTime?
-  format     String        @default("edison")
+  id           String    @id @default(cuid())
+  createdAt    DateTime  @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  format       String    @default("edison")
+  status       String    @default("waiting") // waiting | active | finished | cancelled
+  currentTurn  Int       @default(0)
+  currentPhase String    @default("waiting")
+  engineState  Json?
 
   players MatchPlayer[]
   actions GameAction[]
   replay  Replay?
+
+  @@index([status, createdAt])
 }
 
 model MatchPlayer {
@@ -165,6 +173,7 @@ model MatchPlayer {
   result  String?
 
   @@unique([matchId, userId])
+  @@index([matchId])
 }
 
 model GameAction {
@@ -238,10 +247,10 @@ model ShopListing {
   priceCash Int?
   cashOnly  Boolean @default(false)
   active    Boolean @default(true)
-  
-  maxTotal  Int     @default(3) // Limite geral da carta (ex: 1 para limitadas)
-  maxGold   Int     @default(3) // Quantas cópias pode comprar com Gold
-  maxCash   Int     @default(3) // Quantas cópias pode comprar com Cash
+
+  maxTotal Int @default(3) // Limite geral da carta (ex: 1 para limitadas)
+  maxGold  Int @default(3) // Quantas cópias pode comprar com Gold
+  maxCash  Int @default(3) // Quantas cópias pode comprar com Cash
 }
 
 model UserCardOwnership {
