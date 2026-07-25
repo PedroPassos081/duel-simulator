@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CirclePlay,
   Cpu,
@@ -29,9 +30,12 @@ type EngineStatus = {
 };
 
 export default function DuelPage() {
+  const router = useRouter();
   const [deck, setDeck] = useState<EquippedDeck>();
   const [engine, setEngine] = useState<EngineStatus>();
   const [loading, setLoading] = useState(true);
+  const [matching, setMatching] = useState(false);
+  const [matchError, setMatchError] = useState<string>();
 
   useEffect(() => {
     Promise.all([
@@ -55,6 +59,21 @@ export default function DuelPage() {
     deck?.cards
       .filter((item) => item.section === "extra")
       .reduce((total, item) => total + item.quantity, 0) ?? 0;
+
+  async function findDuel() {
+    setMatching(true);
+    setMatchError(undefined);
+    const response = await fetch("/api/duel/rooms", { method: "POST" });
+    const result = await response.json();
+    if (!response.ok) {
+      setMatching(false);
+      setMatchError(
+        result.issues?.[0]?.message ?? result.error ?? "Não foi possível criar a sala."
+      );
+      return;
+    }
+    router.push(`/duel/play?room=${result.roomId}`);
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 py-6">
@@ -133,13 +152,15 @@ export default function DuelPage() {
 
         <div className="relative mt-7 flex flex-col items-center gap-3">
           {deck ? (
-            <Link
-              href="/duel/play"
+            <button
+              type="button"
+              onClick={findDuel}
+              disabled={matching || !engine?.readyForDuels}
               className="flex h-12 items-center gap-2 rounded-xl bg-edison-gold px-7 text-sm font-black text-black transition hover:brightness-110"
             >
               <CirclePlay className="h-5 w-5" />
-              Abrir campo
-            </Link>
+              {matching ? "Procurando duelista..." : "Procurar duelo"}
+            </button>
           ) : (
             <Link
               href="/deck-builder"
@@ -147,6 +168,11 @@ export default function DuelPage() {
             >
               Equipar um deck
             </Link>
+          )}
+          {matchError && (
+            <span className="max-w-lg text-center text-xs text-red-400">
+              {matchError}
+            </span>
           )}
           <span className="flex items-center gap-1.5 text-xs text-gray-500">
             <ShieldCheck className="h-3.5 w-3.5" />
