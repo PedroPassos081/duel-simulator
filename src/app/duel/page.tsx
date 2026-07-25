@@ -155,8 +155,8 @@ export default function DuelPage() {
             <button
               type="button"
               onClick={findDuel}
-              disabled={matching || !engine?.readyForDuels}
-              className="flex h-12 items-center gap-2 rounded-xl bg-edison-gold px-7 text-sm font-black text-black transition hover:brightness-110"
+              disabled={matching}
+              className="flex h-12 items-center gap-2 rounded-xl bg-edison-gold px-7 text-sm font-black text-black transition hover:brightness-110 disabled:opacity-50"
             >
               <CirclePlay className="h-5 w-5" />
               {matching ? "Procurando duelista..." : "Procurar duelo"}
