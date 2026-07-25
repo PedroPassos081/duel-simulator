@@ -35,7 +35,7 @@ function EmptyZone({
 }) {
   return (
     <div
-      className={`relative flex h-[clamp(60px,9vh,92px)] aspect-[0.72] min-h-0 justify-self-center items-center justify-center rounded-[3px] border bg-black/15 ${
+      className={`relative flex h-[clamp(72px,11vh,110px)] aspect-[0.72] min-h-0 justify-self-center items-center justify-center rounded-[3px] border bg-black/15 ${
         accent === "pink"
           ? "border-fuchsia-300/80 shadow-[inset_0_0_12px_rgba(244,114,182,0.12)]"
           : "border-sky-300/80 shadow-[inset_0_0_12px_rgba(56,189,248,0.12)]"
@@ -63,14 +63,14 @@ function ZoneRow({
 }) {
   const pink = kind === "spell";
   return (
-    <div className={`grid grid-cols-[repeat(5,minmax(58px,88px))] justify-center gap-[clamp(6px,0.8vw,12px)] ${opponent ? "rotate-180" : ""}`}>
+    <div className={`grid grid-cols-[repeat(5,80px)] justify-center gap-1 ${opponent ? "rotate-180" : ""}`}>
       {Array.from({ length: 5 }, (_, index) => {
         const card = cards[index];
         return card?.imageUrl ? (
           <button
             key={`${card.id}-${index}`}
             onClick={() => onSelect?.(card)}
-            className="group relative h-[clamp(60px,9vh,92px)] aspect-[0.72] min-h-0 justify-self-center overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110"
+            className="group relative h-[clamp(72px,11vh,110px)] aspect-[0.72] min-h-0 justify-self-center overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110"
             title={`Ver ${card.name}`}
           >
             <Image
@@ -239,13 +239,13 @@ export default function DuelPlayPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
 
-      <div className="relative z-10 mx-auto grid h-screen w-full max-w-[1600px] grid-cols-[clamp(210px,18vw,250px)_minmax(0,1fr)] items-center gap-3 overflow-hidden px-3 py-3">
+      <div className="relative z-10 mx-auto grid h-screen w-full max-w-[1600px] grid-cols-[clamp(210px,18vw,250px)_minmax(0,1fr)] items-center gap-2 overflow-hidden p-2">
         <CardInspector card={selectedCard} />
 
-        <main className="relative mx-auto flex h-[calc(100vh-24px)] max-h-[1000px] w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-3 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
+        <main className="relative mx-auto flex h-[calc(100vh-16px)] max-h-[1000px] w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-2 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,transparent_0,transparent_28%,rgba(168,85,247,.5)_29%,transparent_30%,transparent_43%,rgba(34,211,238,.35)_44%,transparent_45%)]" />
 
-          <div className="relative flex min-h-0 flex-1 flex-col justify-evenly gap-2">
+          <div className="relative flex min-h-0 flex-1 flex-col justify-center gap-1">
             <div className="flex items-center justify-between gap-4">
               <DuelistHud />
               <div className="text-center">
@@ -257,13 +257,13 @@ export default function DuelPlayPage() {
               <DuelistHud opponent />
             </div>
 
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-1">
               {Array.from({ length: 5 }, (_, index) => (
                 <CardBack key={index} small />
               ))}
             </div>
 
-            <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3 rounded-xl border border-red-400/15 bg-red-950/[0.08] p-2">
+            <div className="grid grid-cols-[70px_1fr_70px] items-center gap-1.5 rounded-xl border border-red-400/15 bg-red-950/[0.08] p-1">
               <div className="space-y-2">
                 <div className="relative">
                   <CardBack />
@@ -303,7 +303,7 @@ export default function DuelPlayPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-[70px_1fr_70px] items-center gap-3 rounded-xl border border-sky-400/20 bg-sky-950/[0.1] p-2">
+            <div className="grid grid-cols-[70px_1fr_70px] items-center gap-1.5 rounded-xl border border-sky-400/20 bg-sky-950/[0.1] p-1">
               <div className="space-y-2">
                 <EmptyZone accent="pink" />
                 <div className="relative">
@@ -340,7 +340,7 @@ export default function DuelPlayPage() {
               </div>
             </div>
 
-            <div className="flex h-[clamp(88px,13vh,122px)] items-end justify-center gap-2">
+            <div className="flex h-[clamp(96px,14vh,140px)] items-end justify-center gap-1.5">
               {loading &&
                 Array.from({ length: 5 }, (_, index) => (
                   <CardBack key={index} small />
@@ -351,7 +351,7 @@ export default function DuelPlayPage() {
                     <button
                       key={`${card.id}-${index}`}
                       onClick={() => setSelectedCard(card)}
-                      className="group relative h-[clamp(84px,12vh,116px)] aspect-[421/614] transition hover:z-10 hover:-translate-y-2 hover:scale-110"
+                      className="group relative h-[clamp(92px,13vh,134px)] aspect-[421/614] transition hover:z-10 hover:-translate-y-2 hover:scale-105"
                     >
                       <Image
                         src={card.imageUrl}
