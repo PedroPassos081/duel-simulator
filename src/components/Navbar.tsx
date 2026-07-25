@@ -7,8 +7,22 @@ export async function Navbar() {
   const session = await auth();
   const userId = session?.user ? (session.user as { id: string }).id : null;
 
-  const wallet = userId
-    ? await prisma.wallet.upsert({ where: { userId }, update: {}, create: { userId } })
+  // Uma sessão JWT pode sobreviver a um reset/troca do banco. Antes de criar
+  // a carteira, confirme que o usuário da sessão ainda existe para não violar
+  // a chave estrangeira Wallet_userId_fkey.
+  const currentUser = userId
+    ? await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      })
+    : null;
+
+  const wallet = currentUser
+    ? await prisma.wallet.upsert({
+        where: { userId: currentUser.id },
+        update: {},
+        create: { userId: currentUser.id },
+      })
     : null;
 
   return (
@@ -27,7 +41,7 @@ export async function Navbar() {
         </nav>
 
         <div className="flex items-center gap-4 text-sm">
-          {session?.user ? (
+          {session?.user && currentUser ? (
             <>
               {wallet && (
                 <div className="flex items-center gap-3 bg-zinc-900/80 px-3 py-1.5 rounded-lg border border-zinc-800">
