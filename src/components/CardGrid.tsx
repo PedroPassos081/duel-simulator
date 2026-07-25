@@ -2,59 +2,19 @@
 
 import type { Card, DeckSection } from "@/types/card";
 
-export function CardGrid({
-  cards,
-  onAdd,
-}: {
-  cards: Card[];
-  onAdd: (card: Card, section: DeckSection) => void;
-}) {
-  if (cards.length === 0) {
-    return <p className="text-sm text-gray-500">Nenhuma carta encontrada.</p>;
-  }
+export function CardGrid({ cards, onAdd }: { cards: Card[]; onAdd: (card: Card, section: DeckSection) => void }) {
+  if (!cards.length) return <div className="rounded-xl border border-dashed border-edison-border p-8 text-center text-sm text-gray-500">Você não possui cartas com esse nome.</div>;
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-5">
       {cards.map((card) => {
-        const isExtraDeckType = card.type === "Monster" && card.description.length === 0;
-        const defaultSection: DeckSection = card.type !== "Monster" ? "main" : "main";
-
+        const extra = /fusion|synchro/i.test(card.type);
         return (
-          <div
-            key={card.id}
-            className="rounded border border-edison-border bg-edison-panel p-2 text-xs"
-          >
-            <p className="mb-1 font-medium text-gray-100">{card.name}</p>
-            <p className="mb-2 text-gray-400">
-              {card.type}
-              {card.atk != null ? ` · ATK ${card.atk}/${card.def}` : ""}
-            </p>
-            {card.banlistEntries?.[0] && card.banlistEntries[0].status !== "unlimited" && (
-              <p className="mb-2 text-amber-400">
-                Banlist: {card.banlistEntries[0].status}
-              </p>
-            )}
-            <div className="flex gap-1">
-              <button
-                onClick={() => onAdd(card, "main")}
-                className="flex-1 rounded bg-edison-gold py-1 text-black hover:opacity-90"
-              >
-                + Main
-              </button>
-              <button
-                onClick={() => onAdd(card, "extra")}
-                className="flex-1 rounded border border-edison-border py-1 hover:bg-edison-border"
-              >
-                + Extra
-              </button>
-              <button
-                onClick={() => onAdd(card, "side")}
-                className="flex-1 rounded border border-edison-border py-1 hover:bg-edison-border"
-              >
-                + Side
-              </button>
-            </div>
-          </div>
+          <button key={card.id} onClick={() => onAdd(card, extra ? "extra" : "main")} title={`Adicionar ${card.name}`} className="group relative overflow-hidden rounded-lg border border-edison-border bg-black/20 text-left transition hover:-translate-y-0.5 hover:border-edison-gold">
+            {card.imageUrl ? <img src={card.imageUrl} alt={card.name} className="aspect-[421/614] w-full object-cover" /> : <div className="flex aspect-[421/614] items-center justify-center p-2 text-center text-xs text-gray-500">{card.name}</div>}
+            <span className="absolute right-1 top-1 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white">x{card.ownedQuantity ?? 0}</span>
+            <span className="absolute inset-x-0 bottom-0 translate-y-full bg-edison-gold py-1 text-center text-xs font-bold text-black transition group-hover:translate-y-0">+ Adicionar</span>
+          </button>
         );
       })}
     </div>
