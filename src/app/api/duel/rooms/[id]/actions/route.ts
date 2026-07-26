@@ -9,11 +9,16 @@ import {
 } from "@/lib/duel/game-state";
 import {
   performOcgEndTurn,
+  performOcgPhaseChange,
   performOcgMonsterAction,
 } from "@/lib/duel/ocgcore-session";
 
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("next_phase") }),
+  z.object({
+    type: z.literal("select_phase"),
+    phase: z.enum(["standby", "main1", "battle", "main2"]),
+  }),
   z.object({ type: z.literal("end_turn") }),
   z.object({ type: z.literal("pass_chain") }),
   z.object({
@@ -132,8 +137,41 @@ export async function POST(
       );
     }
     phase = next;
+  } else if (parsed.data.type === "select_phase") {
+    const allowedTargets: Record<string, string[]> = {
+      draw: ["standby"],
+      standby: ["main1"],
+      main1: state.turn === 1 ? [] : ["battle"],
+      battle: ["main2"],
+    };
+    if (!allowedTargets[phase]?.includes(parsed.data.phase)) {
+      return NextResponse.json(
+        { error: "Não é possível avançar para essa fase agora." },
+        { status: 409 }
+      );
+    }
+    if (parsed.data.phase === "battle" || parsed.data.phase === "main2") {
+      try {
+        await performOcgPhaseChange(
+          room.id,
+          userId,
+          parsed.data.phase
+        );
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "O OCGCore recusou a mudança de fase.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+    phase = parsed.data.phase;
   } else if (parsed.data.type === "end_turn") {
-    if (!["main1", "main2", "end"].includes(phase)) {
+    if (!["main1", "battle", "main2", "end"].includes(phase)) {
       return NextResponse.json(
         { error: "Não é possível terminar o turno nesta fase." },
         { status: 409 }
