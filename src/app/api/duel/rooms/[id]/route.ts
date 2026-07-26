@@ -97,6 +97,24 @@ export async function GET(
     }
   }
 
+  type StoredPlayerState = {
+    deck: number[];
+    hand: number[];
+    extra: number[];
+  };
+  const storedState = room.engineState as
+    | { players?: Record<string, StoredPlayerState> }
+    | null;
+  const ownState = storedState?.players?.[userId];
+  const opponentPlayer = room.players.find((player) => player.userId !== userId);
+  const opponentState = opponentPlayer
+    ? storedState?.players?.[opponentPlayer.userId]
+    : undefined;
+  const handCards = ownState
+    ? await prisma.card.findMany({ where: { id: { in: ownState.hand } } })
+    : [];
+  const handById = new Map(handCards.map((card) => [card.id, card]));
+
   return NextResponse.json({
     id: room.id,
     status: room.status,
@@ -107,6 +125,19 @@ export async function GET(
     rpsDeadline: room.rpsDeadline?.toISOString() ?? null,
     rpsWinnerId: room.rpsWinnerId,
     firstPlayerId: room.firstPlayerId,
+    game:
+      room.status === "active" && ownState
+        ? {
+            ownHand: ownState.hand
+              .map((cardId) => handById.get(cardId))
+              .filter(Boolean),
+            ownDeckCount: ownState.deck.length,
+            ownExtraCount: ownState.extra.length,
+            opponentHandCount: opponentState?.hand.length ?? 0,
+            opponentDeckCount: opponentState?.deck.length ?? 0,
+            opponentExtraCount: opponentState?.extra.length ?? 0,
+          }
+        : null,
     players: room.players.map((player) => ({
       id: player.userId,
       nickname: player.user.username ?? player.user.name ?? "Duelista",
