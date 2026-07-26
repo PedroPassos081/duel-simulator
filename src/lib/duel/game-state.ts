@@ -13,13 +13,23 @@ export type DuelPlayerState = {
   extra: number[];
   monsters: FieldCardState[];
   spellTraps: FieldCardState[];
+  graveyard: number[];
   normalSummoned: boolean;
+};
+
+export type DuelChainState = {
+  links: {
+    playerId: string;
+    cardId: number;
+  }[];
+  awaitingPlayerId: string;
 };
 
 export type DuelGameState = {
   players: Record<string, DuelPlayerState>;
   turnPlayerId: string;
   turn: number;
+  chain?: DuelChainState;
 };
 
 export function isDuelGameState(value: unknown): value is DuelGameState {
