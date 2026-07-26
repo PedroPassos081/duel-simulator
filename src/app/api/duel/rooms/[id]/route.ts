@@ -162,6 +162,7 @@ export async function GET(
         card: !faceDown || revealFaceDown ? cardById.get(entry.cardId) : undefined,
         faceDown,
         position: entry.position,
+        zone: entry.zone,
       };
     });
 
