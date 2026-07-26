@@ -71,6 +71,7 @@ export async function POST() {
         data: {
           status: "rps",
           currentPhase: "rps",
+          rpsDeadline: new Date(Date.now() + 15_000),
         },
         include: { players: true },
       });
