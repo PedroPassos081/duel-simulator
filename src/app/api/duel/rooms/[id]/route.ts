@@ -143,6 +143,9 @@ export async function GET(
         }
         if (!monster && ownState.spellTraps.length < 5) {
           actions.push("set_spell_trap");
+          if (type.includes("spell")) {
+            actions.unshift("activate");
+          }
         }
       }
       legalActions[String(cardId)] = actions;
