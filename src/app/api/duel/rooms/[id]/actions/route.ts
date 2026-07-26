@@ -11,6 +11,7 @@ import {
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("next_phase") }),
   z.object({ type: z.literal("end_turn") }),
+  z.object({ type: z.literal("pass_chain") }),
   z.object({
     type: z.enum(["summon", "set_monster", "set_spell_trap", "activate"]),
     cardId: z.number().int().positive(),
@@ -68,6 +69,49 @@ export async function POST(
   }
 
   const state = structuredClone(room.engineState) as DuelGameState;
+  if (state.chain) {
+    if (
+      parsed.data.type !== "pass_chain" ||
+      state.chain.awaitingPlayerId !== userId
+    ) {
+      return NextResponse.json(
+        { error: "A corrente está aguardando a resposta do outro jogador." },
+        { status: 409 }
+      );
+    }
+
+    const link = state.chain.links[state.chain.links.length - 1];
+    const controller = state.players[link.playerId];
+    const card = await prisma.card.findUnique({ where: { id: link.cardId } });
+    if (!card) {
+      return NextResponse.json({ error: "Carta não encontrada." }, { status: 404 });
+    }
+    const persistent = ["continuous", "field", "equip"].some((kind) =>
+      card.type.toLowerCase().includes(kind)
+    );
+    if (!persistent) {
+      const fieldIndex = controller.spellTraps.findIndex(
+        (entry) => entry.cardId === link.cardId
+      );
+      if (fieldIndex >= 0) controller.spellTraps.splice(fieldIndex, 1);
+      controller.graveyard.push(link.cardId);
+    }
+    delete state.chain;
+
+    await prisma.match.update({
+      where: { id: room.id },
+      data: { engineState: state },
+    });
+    return NextResponse.json({ ok: true, chainResolved: true });
+  }
+
+  if (parsed.data.type === "pass_chain") {
+    return NextResponse.json(
+      { error: "Não existe uma corrente aguardando resposta." },
+      { status: 409 }
+    );
+  }
+
   if (state.turnPlayerId !== userId) {
     return NextResponse.json({ error: "Aguarde o seu turno." }, { status: 409 });
   }
@@ -135,6 +179,15 @@ export async function POST(
         position:
           parsed.data.type === "activate" ? "face_up_attack" : "face_down",
       });
+      if (parsed.data.type === "activate") {
+        const opponentId = room.players.find(
+          (entry) => entry.userId !== userId
+        )!.userId;
+        state.chain = {
+          links: [{ playerId: userId, cardId: card.id }],
+          awaitingPlayerId: opponentId,
+        };
+      }
     } else {
       if (!isMonster(card.type) || player.monsters.length >= 5) {
         return NextResponse.json(
