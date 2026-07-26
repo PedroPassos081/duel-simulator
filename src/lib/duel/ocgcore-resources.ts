@@ -2,8 +2,7 @@ import "server-only";
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Database, SqlJsStatic } from "sql.js";
 
@@ -48,16 +47,15 @@ let databasePromise: Promise<Database> | undefined;
 
 async function loadDatabase() {
   const { cardDatabase } = getOcgCoreResourcePaths();
-  const require = createRequire(import.meta.url);
-  const sqlPackage = ["sql", "js"].join(".");
   const runtimeUrl = pathToFileURL(
-    require.resolve(`${sqlPackage}/dist/sql-wasm.js`)
+    join(process.cwd(), "node_modules", "sql.js", "dist", "sql-wasm.js")
   ).href;
   const runtime = (await import(/* webpackIgnore: true */ runtimeUrl)) as {
     default(options: { locateFile: () => string }): Promise<SqlJsStatic>;
   };
   const SQL = await runtime.default({
-    locateFile: () => require.resolve(`${sqlPackage}/dist/sql-wasm.wasm`),
+    locateFile: () =>
+      join(process.cwd(), "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
   });
   return new SQL.Database(await readFile(cardDatabase));
 }
