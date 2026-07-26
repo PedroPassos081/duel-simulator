@@ -388,14 +388,24 @@ export async function performOcgEndTurn(matchId: string, userId: string) {
   if (!session) return null;
   if (session.busy) throw new Error("O motor já está processando outra ação.");
 
-  const pending = getPendingMessage(session);
-  if (!pending || session.players[Number(pending.player)] !== userId) {
-    throw new Error("O OCGCore não permite terminar o turno agora.");
-  }
-
   session.busy = true;
   try {
     const core = await loadOcgCore();
+    let pending = getPendingMessage(session);
+    while (
+      pending?.type === MESSAGE_SELECT_CHAIN &&
+      pending.forced !== true
+    ) {
+      core.duelSetResponse(session.handle, {
+        type: RESPONSE_SELECT_CHAIN,
+        index: null,
+      });
+      await processUntilDecision(core, session);
+      pending = getPendingMessage(session);
+    }
+    if (!pending || session.players[Number(pending.player)] !== userId) {
+      throw new Error("O OCGCore não permite terminar o turno agora.");
+    }
     if (pending.type === MESSAGE_SELECT_IDLECMD && pending.to_ep === true) {
       core.duelSetResponse(session.handle, {
         type: RESPONSE_SELECT_IDLECMD,
@@ -479,6 +489,10 @@ export function getOcgDuelSessionSnapshot(matchId: string) {
     messageCount: session.messages.length,
     pendingMessageType:
       typeof pendingMessage?.type === "number" ? pendingMessage.type : null,
+    pendingPlayerId:
+      typeof pendingMessage?.player === "number"
+        ? session.players[Number(pendingMessage.player)] ?? null
+        : null,
     errorCount: session.errors.length,
     createdAt: new Date(session.createdAt).toISOString(),
   };
