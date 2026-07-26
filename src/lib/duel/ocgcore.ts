@@ -1,7 +1,6 @@
 import "server-only";
 
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getOcgCoreResourceStatus } from "@/lib/duel/ocgcore-resources";
 
@@ -20,12 +19,17 @@ declare global {
 
 async function createOcgCore() {
   // A versão publicada no JSR não reexporta corretamente o módulo padrão.
-  // Resolver o arquivo de runtime mantém o carregamento restrito ao servidor.
-  const require = createRequire(import.meta.url);
-  const packageName = ["@n1xx1", "ocgcore-wasm"].join("/");
-  const packageEntry = require.resolve(packageName);
+  // O caminho absoluto evita que o webpack transforme `require.resolve`
+  // em um contexto vazio no Windows.
   const runtimeUrl = pathToFileURL(
-    join(dirname(packageEntry), "dist/index.js")
+    join(
+      process.cwd(),
+      "node_modules",
+      "@n1xx1",
+      "ocgcore-wasm",
+      "dist",
+      "index.js"
+    )
   ).href;
   const runtime = (await import(/* webpackIgnore: true */ runtimeUrl)) as OcgCoreModule;
 
