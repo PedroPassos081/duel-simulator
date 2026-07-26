@@ -73,6 +73,7 @@ export async function POST(
       extra: shuffle(expand("extra")),
       monsters: [],
       spellTraps: [],
+      graveyard: [],
       normalSummoned: false,
     };
   }
