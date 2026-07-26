@@ -21,6 +21,11 @@ export async function GET(
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
 
+  await prisma.matchPlayer.updateMany({
+    where: { matchId: params.id, userId },
+    data: { lastSeenAt: new Date() },
+  });
+
   let room = await prisma.match.findFirst({
     where: { id: params.id, players: { some: { userId } } },
     include: {
