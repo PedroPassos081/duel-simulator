@@ -884,19 +884,6 @@ export default function DuelPlayPage() {
               </div>
             </div>
 
-            {pendingPlacement && (
-              <div className="mx-auto flex items-center gap-3 rounded-lg border border-edison-gold/35 bg-black/80 px-4 py-2 text-xs font-bold text-edison-gold">
-                Escolha uma zona livre para colocar a carta.
-                <button
-                  type="button"
-                  onClick={() => setPendingPlacement(undefined)}
-                  className="rounded bg-white/10 px-2 py-1 text-[10px] text-white/70"
-                >
-                  Cancelar
-                </button>
-              </div>
-            )}
-
             <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-sky-400/20 bg-sky-950/[0.1] p-1">
               <div className="flex flex-col items-center gap-2">
                 <EmptyZone accent="pink" />
