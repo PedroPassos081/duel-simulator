@@ -12,7 +12,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("next_phase") }),
   z.object({ type: z.literal("end_turn") }),
   z.object({
-    type: z.enum(["summon", "set_monster", "set_spell_trap"]),
+    type: z.enum(["summon", "set_monster", "set_spell_trap", "activate"]),
     cardId: z.number().int().positive(),
   }),
 ]);
@@ -115,14 +115,26 @@ export async function POST(
       return NextResponse.json({ error: "Carta não encontrada." }, { status: 404 });
     }
 
-    if (parsed.data.type === "set_spell_trap") {
-      if (isMonster(card.type) || player.spellTraps.length >= 5) {
+    if (
+      parsed.data.type === "set_spell_trap" ||
+      parsed.data.type === "activate"
+    ) {
+      const normalizedType = card.type.toLowerCase();
+      if (
+        isMonster(card.type) ||
+        player.spellTraps.length >= 5 ||
+        (parsed.data.type === "activate" && !normalizedType.includes("spell"))
+      ) {
         return NextResponse.json(
           { error: "Não é possível colocar esta carta nesta zona." },
           { status: 409 }
         );
       }
-      player.spellTraps.push({ cardId: card.id, position: "face_down" });
+      player.spellTraps.push({
+        cardId: card.id,
+        position:
+          parsed.data.type === "activate" ? "face_up_attack" : "face_down",
+      });
     } else {
       if (!isMonster(card.type) || player.monsters.length >= 5) {
         return NextResponse.json(
