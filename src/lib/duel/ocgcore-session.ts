@@ -21,6 +21,7 @@ const RESPONSE_SELECT_IDLECMD = 1;
 const RESPONSE_SELECT_PLACE = 10;
 const IDLE_SUMMON = 0;
 const IDLE_MONSTER_SET = 3;
+const IDLE_TO_END_PHASE = 7;
 const LOCATION_MZONE = 4;
 
 type OcgSession = {
@@ -278,6 +279,36 @@ export async function performOcgMonsterAction(input: {
     }
 
     return getOcgDuelSessionSnapshot(input.matchId);
+  } finally {
+    session.busy = false;
+  }
+}
+
+export async function performOcgEndTurn(matchId: string, userId: string) {
+  const session = sessions.get(matchId);
+  if (!session) return null;
+  if (session.busy) throw new Error("O motor já está processando outra ação.");
+
+  const pending = getPendingMessage(session);
+  if (
+    !pending ||
+    pending.type !== MESSAGE_SELECT_IDLECMD ||
+    session.players[Number(pending.player)] !== userId ||
+    pending.to_ep !== true
+  ) {
+    throw new Error("O OCGCore não permite terminar o turno agora.");
+  }
+
+  session.busy = true;
+  try {
+    const core = await loadOcgCore();
+    core.duelSetResponse(session.handle, {
+      type: RESPONSE_SELECT_IDLECMD,
+      action: IDLE_TO_END_PHASE,
+      index: null,
+    });
+    await processUntilDecision(core, session);
+    return getOcgDuelSessionSnapshot(matchId);
   } finally {
     session.busy = false;
   }
