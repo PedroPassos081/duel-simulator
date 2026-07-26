@@ -57,6 +57,12 @@ type RoomGameState = {
   currentTurn: number;
   currentPhase: string;
   legalActions: Record<string, DuelCardAction[]>;
+  chain?: {
+    card: Card | null;
+    linkCount: number;
+    awaitingYou: boolean;
+    controllerId: string;
+  } | null;
 };
 
 type DuelCardAction =
@@ -652,6 +658,7 @@ export default function DuelPlayPage() {
   async function sendAction(
     action:
       | { type: "next_phase" | "end_turn" }
+      | { type: "pass_chain" }
       | {
           type: "summon" | "set_monster" | "set_spell_trap" | "activate";
           cardId: number;
@@ -686,6 +693,34 @@ export default function DuelPlayPage() {
       )}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
+
+      {gameState?.chain && (
+        <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/45 pointer-events-none">
+          <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-edison-gold">
+              Chain Link {gameState.chain.linkCount}
+            </p>
+            <h2 className="mt-2 text-lg font-black">
+              {gameState.chain.card?.name ?? "Efeito ativado"}
+            </h2>
+            <p className="mt-2 text-xs text-white/55">
+              {gameState.chain.awaitingYou
+                ? "Deseja responder à ativação?"
+                : "Aguardando a resposta do oponente."}
+            </p>
+            {gameState.chain.awaitingYou && (
+              <button
+                type="button"
+                onClick={() => sendAction({ type: "pass_chain" })}
+                disabled={acting}
+                className="mt-4 rounded-lg bg-edison-gold px-5 py-2 text-xs font-black text-black disabled:opacity-40"
+              >
+                Sem resposta
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="relative z-10 mx-auto grid h-screen w-full max-w-[1600px] grid-cols-[clamp(300px,25vw,360px)_minmax(0,1fr)] items-center gap-2 overflow-hidden p-2">
         <CardInspector card={selectedCard} />
