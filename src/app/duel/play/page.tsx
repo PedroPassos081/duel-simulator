@@ -76,6 +76,13 @@ type FieldCardView = {
   card?: Card;
   faceDown: boolean;
   position: string;
+  zone: number;
+};
+
+type PendingPlacement = {
+  action: Exclude<DuelCardAction, "special_summon">;
+  cardId: number;
+  kind: "monster" | "spell";
 };
 
 const PHASES = ["DP", "SP", "MP1", "BP", "MP2", "EP"];
@@ -140,23 +147,34 @@ function ZoneRow({
   kind,
   cards = [],
   onSelect,
+  selectable = false,
+  onZoneSelect,
 }: {
   opponent?: boolean;
   kind: "monster" | "spell";
   cards?: FieldCardView[];
   onSelect?: (card: Card) => void;
+  selectable?: boolean;
+  onZoneSelect?: (zone: number) => void;
 }) {
   const pink = kind === "spell";
   return (
     <div className={`grid grid-cols-[repeat(5,104px)] justify-center gap-1 ${opponent ? "rotate-180" : ""}`}>
       {Array.from({ length: 5 }, (_, index) => {
-        const fieldCard = cards[index];
+        const fieldCard = cards.find((entry) => entry.zone === index);
         const card = fieldCard?.card;
+        const defensePosition =
+          fieldCard?.position === "face_down_defense" ||
+          fieldCard?.position === "face_up_defense";
         return fieldCard ? (
           <button
             key={`${card?.id ?? "hidden"}-${index}`}
             onClick={() => card && onSelect?.(card)}
-            className="group relative h-[clamp(96px,14.5vh,142px)] aspect-[0.72] min-h-0 justify-self-center overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110"
+            className={`group relative min-h-0 justify-self-center overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110 ${
+              defensePosition
+                ? "h-[100px] aspect-[0.72] rotate-90"
+                : "h-[clamp(96px,14.5vh,142px)] aspect-[0.72]"
+            }`}
             title={card ? `Ver ${card.name}` : "Carta virada para baixo"}
           >
             {fieldCard.faceDown || !card?.imageUrl ? (
@@ -173,10 +191,19 @@ function ZoneRow({
             )}
           </button>
         ) : (
-          <EmptyZone
+          <button
             key={index}
-            accent={pink ? "pink" : "blue"}
-          />
+            type="button"
+            disabled={!selectable}
+            onClick={() => onZoneSelect?.(index)}
+            className={`rounded transition ${
+              selectable
+                ? "animate-pulse ring-2 ring-edison-gold hover:bg-edison-gold/15"
+                : ""
+            }`}
+          >
+            <EmptyZone accent={pink ? "pink" : "blue"} />
+          </button>
         );
       })}
     </div>
@@ -595,6 +622,7 @@ export default function DuelPlayPage() {
   const [actionError, setActionError] = useState<string>();
   const [acting, setActing] = useState(false);
   const [selectedHandIndex, setSelectedHandIndex] = useState<number>();
+  const [pendingPlacement, setPendingPlacement] = useState<PendingPlacement>();
 
   useEffect(() => {
     setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
@@ -662,6 +690,7 @@ export default function DuelPlayPage() {
       | {
           type: "summon" | "set_monster" | "set_spell_trap" | "activate";
           cardId: number;
+          zone: number;
         }
   ) {
     if (!roomId || acting) return;
@@ -677,13 +706,29 @@ export default function DuelPlayPage() {
       setActionError(result.error ?? "Não foi possível realizar esta ação.");
     } else {
       setSelectedHandIndex(undefined);
+      setPendingPlacement(undefined);
     }
     setActing(false);
   }
 
   function handleCardAction(action: DuelCardAction, cardId: number) {
     if (action === "special_summon") return;
-    sendAction({ type: action, cardId });
+    setPendingPlacement({
+      action,
+      cardId,
+      kind:
+        action === "summon" || action === "set_monster" ? "monster" : "spell",
+    });
+    setSelectedHandIndex(undefined);
+  }
+
+  function placeCard(zone: number) {
+    if (!pendingPlacement) return;
+    sendAction({
+      type: pendingPlacement.action,
+      cardId: pendingPlacement.cardId,
+      zone,
+    });
   }
 
   return (
@@ -808,6 +853,19 @@ export default function DuelPlayPage() {
               </div>
             </div>
 
+            {pendingPlacement && (
+              <div className="mx-auto flex items-center gap-3 rounded-lg border border-edison-gold/35 bg-black/80 px-4 py-2 text-xs font-bold text-edison-gold">
+                Escolha uma zona livre para colocar a carta.
+                <button
+                  type="button"
+                  onClick={() => setPendingPlacement(undefined)}
+                  className="rounded bg-white/10 px-2 py-1 text-[10px] text-white/70"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+
             <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-sky-400/20 bg-sky-950/[0.1] p-1">
               <div className="flex flex-col items-center gap-2">
                 <EmptyZone accent="pink" />
@@ -824,6 +882,8 @@ export default function DuelPlayPage() {
                     kind="monster"
                     cards={fieldMonsters}
                     onSelect={setSelectedCard}
+                    selectable={pendingPlacement?.kind === "monster"}
+                    onZoneSelect={placeCard}
                   />
                 </div>
                 <div>
@@ -831,6 +891,8 @@ export default function DuelPlayPage() {
                     kind="spell"
                     cards={fieldSpellTraps}
                     onSelect={setSelectedCard}
+                    selectable={pendingPlacement?.kind === "spell"}
+                    onZoneSelect={placeCard}
                   />
                 </div>
               </div>
