@@ -25,11 +25,15 @@ const RESPONSE_SELECT_CHAIN = 8;
 const RESPONSE_SELECT_PLACE = 10;
 const IDLE_SUMMON = 0;
 const IDLE_MONSTER_SET = 3;
+const IDLE_SPELL_SET = 4;
+const IDLE_ACTIVATE = 5;
 const IDLE_TO_END_PHASE = 7;
 const IDLE_TO_BATTLE_PHASE = 6;
 const BATTLE_TO_MAIN2 = 2;
 const BATTLE_TO_END_PHASE = 3;
 const LOCATION_MZONE = 4;
+const LOCATION_SZONE = 8;
+const LOCATION_FZONE = 256;
 
 type OcgSession = {
   handle: unknown;
@@ -71,7 +75,8 @@ async function loadCards(codes: number[]) {
 
 async function processUntilDecision(
   core: Awaited<ReturnType<typeof loadOcgCore>>,
-  session: OcgSession
+  session: OcgSession,
+  autoPassOptionalChain = true
 ) {
   for (let step = 0; step < 1_000; step += 1) {
     const status = await core.duelProcess(session.handle);
@@ -83,6 +88,7 @@ async function processUntilDecision(
     if (status === PROCESS_WAITING) {
       const pending = getPendingMessage(session);
       if (
+        autoPassOptionalChain &&
         pending?.type === MESSAGE_SELECT_CHAIN &&
         pending.forced !== true
       ) {
@@ -239,6 +245,8 @@ export function getOcgLegalActions(matchId: string, userId: string) {
   };
   add("summons", "summon");
   add("monster_sets", "set_monster");
+  add("spell_sets", "set_spell_trap");
+  add("activates", "activate");
   return actions;
 }
 
@@ -300,6 +308,79 @@ export async function performOcgMonsterAction(input: {
   } finally {
     session.busy = false;
   }
+}
+
+export async function performOcgSpellAction(input: {
+  matchId: string;
+  userId: string;
+  action: "set_spell_trap" | "activate";
+  cardId: number;
+  zone: number;
+  fieldSpell: boolean;
+}) {
+  const session = sessions.get(input.matchId);
+  if (!session) return null;
+  if (session.busy) throw new Error("O motor já está processando outra ação.");
+  const pending = getPendingMessage(session);
+  if (
+    !pending ||
+    pending.type !== MESSAGE_SELECT_IDLECMD ||
+    session.players[Number(pending.player)] !== input.userId
+  ) {
+    throw new Error("O OCGCore não está aguardando essa ação.");
+  }
+  const list = input.action === "activate" ? "activates" : "spell_sets";
+  const index = cardIndex(pending, list, input.cardId);
+  if (index < 0) throw new Error("Essa carta não pode realizar essa ação agora.");
+
+  session.busy = true;
+  try {
+    const core = await loadOcgCore();
+    core.duelSetResponse(session.handle, {
+      type: RESPONSE_SELECT_IDLECMD,
+      action: input.action === "activate" ? IDLE_ACTIVATE : IDLE_SPELL_SET,
+      index,
+    });
+    await processUntilDecision(core, session, false);
+    const placeRequest = getPendingMessage(session);
+    if (placeRequest?.type === MESSAGE_SELECT_PLACE) {
+      core.duelSetResponse(session.handle, {
+        type: RESPONSE_SELECT_PLACE,
+        places: [
+          {
+            player: Number(placeRequest.player),
+            location: input.fieldSpell ? LOCATION_FZONE : LOCATION_SZONE,
+            sequence: input.fieldSpell ? 0 : input.zone,
+          },
+        ],
+      });
+      await processUntilDecision(core, session, false);
+    }
+    return getOcgDuelSessionSnapshot(input.matchId);
+  } finally {
+    session.busy = false;
+  }
+}
+
+export async function passOcgChain(matchId: string, userId: string) {
+  const session = sessions.get(matchId);
+  if (!session) return null;
+  const pending = getPendingMessage(session);
+  if (
+    !pending ||
+    pending.type !== MESSAGE_SELECT_CHAIN ||
+    pending.forced === true ||
+    session.players[Number(pending.player)] !== userId
+  ) {
+    return null;
+  }
+  const core = await loadOcgCore();
+  core.duelSetResponse(session.handle, {
+    type: RESPONSE_SELECT_CHAIN,
+    index: null,
+  });
+  await processUntilDecision(core, session);
+  return getOcgDuelSessionSnapshot(matchId);
 }
 
 export async function performOcgEndTurn(matchId: string, userId: string) {
