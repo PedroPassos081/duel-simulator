@@ -44,14 +44,27 @@ type RoomState = {
 
 type RoomGameState = {
   ownHand: Card[];
+  ownMonsters: Card[];
+  ownSpellTraps: Card[];
   ownDeckCount: number;
   ownExtraCount: number;
   opponentHandCount: number;
   opponentDeckCount: number;
   opponentExtraCount: number;
+  isYourTurn: boolean;
+  currentTurn: number;
+  currentPhase: string;
 };
 
 const PHASES = ["DP", "SP", "MP1", "BP", "MP2", "EP"];
+const PHASE_KEYS: Record<string, string> = {
+  DP: "draw",
+  SP: "standby",
+  MP1: "main1",
+  BP: "battle",
+  MP2: "main2",
+  EP: "end",
+};
 
 function CardBack({ small = false }: { small?: boolean }) {
   return (
@@ -552,6 +565,8 @@ export default function DuelPlayPage() {
   const [playerDeckCount, setPlayerDeckCount] = useState(0);
   const [opponentDeckCount, setOpponentDeckCount] = useState(35);
   const [gameState, setGameState] = useState<RoomGameState | null>();
+  const [actionError, setActionError] = useState<string>();
+  const [acting, setActing] = useState(false);
 
   useEffect(() => {
     setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
@@ -582,6 +597,15 @@ export default function DuelPlayPage() {
       .filter((item) => item.section === "extra")
       .reduce((total, item) => total + item.quantity, 0) ?? 0;
   const hand = gameState?.ownHand ?? mainDeck.slice(0, 5);
+  const fieldMonsters = gameState?.ownMonsters ?? [];
+  const fieldSpellTraps = gameState?.ownSpellTraps ?? [];
+  const selectedIsInHand = Boolean(
+    selectedCard && hand.some((card) => card.id === selectedCard.id)
+  );
+  const selectedIsMonster = selectedCard
+    ? !selectedCard.type.toLowerCase().includes("spell") &&
+      !selectedCard.type.toLowerCase().includes("trap")
+    : false;
 
   useEffect(() => {
     setPlayerDeckCount(
@@ -606,6 +630,29 @@ export default function DuelPlayPage() {
     window.addEventListener("duel:deck-count", updateDeckCounts);
     return () => window.removeEventListener("duel:deck-count", updateDeckCounts);
   }, []);
+
+  async function sendAction(
+    action:
+      | { type: "next_phase" | "end_turn" }
+      | {
+          type: "summon" | "set_monster" | "set_spell_trap";
+          cardId: number;
+        }
+  ) {
+    if (!roomId || acting) return;
+    setActing(true);
+    setActionError(undefined);
+    const response = await fetch(`/api/duel/rooms/${roomId}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(action),
+    });
+    if (!response.ok) {
+      const result = await response.json();
+      setActionError(result.error ?? "Não foi possível realizar esta ação.");
+    }
+    setActing(false);
+  }
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-[#080b12] text-white">
@@ -654,11 +701,12 @@ export default function DuelPlayPage() {
 
             <div className="mx-auto w-full max-w-[790px] rounded-xl border border-white/10 bg-black/45 px-3 py-1.5 shadow-lg backdrop-blur-sm">
               <div className="flex items-center justify-center gap-1.5">
-                {PHASES.map((phase, index) => (
+                {PHASES.map((phase) => (
                   <button
                     key={phase}
+                    disabled
                     className={`min-w-11 rounded px-3 py-1.5 text-[10px] font-black transition ${
-                      index === 2
+                      PHASE_KEYS[phase] === gameState?.currentPhase
                         ? "bg-emerald-600 text-white shadow-[0_0_14px_rgba(22,163,74,0.35)]"
                         : "border border-white/10 bg-white/10 text-white/50 hover:bg-white/15 hover:text-white"
                     }`}
@@ -666,14 +714,27 @@ export default function DuelPlayPage() {
                     {phase}
                   </button>
                 ))}
-                <button className="ml-2 rounded bg-red-700 px-4 py-1.5 text-[10px] font-black text-white transition hover:bg-red-600">
+                <button
+                  onClick={() => sendAction({ type: "next_phase" })}
+                  disabled={acting || !gameState?.isYourTurn}
+                  className="ml-2 rounded bg-emerald-700 px-3 py-1.5 text-[10px] font-black text-white transition hover:bg-emerald-600 disabled:opacity-35"
+                >
+                  Próxima fase
+                </button>
+                <button
+                  onClick={() => sendAction({ type: "end_turn" })}
+                  disabled={acting || !gameState?.isYourTurn}
+                  className="rounded bg-red-700 px-4 py-1.5 text-[10px] font-black text-white transition hover:bg-red-600 disabled:opacity-35"
+                >
                   Terminar turno
                 </button>
                 <div className="ml-1 flex items-center gap-2 rounded border border-edison-gold/25 bg-edison-gold/10 px-3 py-1">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-white/45">
                     Turno
                   </span>
-                  <strong className="font-mono text-sm text-edison-gold">01</strong>
+                  <strong className="font-mono text-sm text-edison-gold">
+                    {String(gameState?.currentTurn ?? 1).padStart(2, "0")}
+                  </strong>
                 </div>
               </div>
             </div>
@@ -707,6 +768,54 @@ export default function DuelPlayPage() {
                 <DeckPile count={playerDeckCount} />
               </div>
             </div>
+
+            {selectedCard && selectedIsInHand && (
+              <div className="mx-auto flex min-h-9 items-center justify-center gap-2">
+                {selectedIsMonster ? (
+                  <>
+                    <button
+                      onClick={() =>
+                        sendAction({ type: "summon", cardId: selectedCard.id })
+                      }
+                      disabled={acting || !gameState?.isYourTurn}
+                      className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-black disabled:opacity-35"
+                    >
+                      Invocar
+                    </button>
+                    <button
+                      onClick={() =>
+                        sendAction({
+                          type: "set_monster",
+                          cardId: selectedCard.id,
+                        })
+                      }
+                      disabled={acting || !gameState?.isYourTurn}
+                      className="rounded-lg bg-white/10 px-4 py-2 text-xs font-black disabled:opacity-35"
+                    >
+                      Baixar em defesa
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() =>
+                      sendAction({
+                        type: "set_spell_trap",
+                        cardId: selectedCard.id,
+                      })
+                    }
+                    disabled={acting || !gameState?.isYourTurn}
+                    className="rounded-lg bg-fuchsia-700 px-4 py-2 text-xs font-black disabled:opacity-35"
+                  >
+                    Colocar no campo
+                  </button>
+                )}
+                {actionError && (
+                  <span className="max-w-xs text-xs text-red-300">
+                    {actionError}
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="flex h-[clamp(132px,20vh,190px)] shrink-0 items-center justify-center gap-2 overflow-visible">
               {loading &&
