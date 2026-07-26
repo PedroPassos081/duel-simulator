@@ -16,12 +16,17 @@ const POSITION_FACEDOWN_DEFENSE = 8;
 const PROCESS_END = 0;
 const PROCESS_WAITING = 1;
 const MESSAGE_SELECT_IDLECMD = 11;
+const MESSAGE_SELECT_BATTLECMD = 10;
 const MESSAGE_SELECT_PLACE = 18;
 const RESPONSE_SELECT_IDLECMD = 1;
+const RESPONSE_SELECT_BATTLECMD = 0;
 const RESPONSE_SELECT_PLACE = 10;
 const IDLE_SUMMON = 0;
 const IDLE_MONSTER_SET = 3;
 const IDLE_TO_END_PHASE = 7;
+const IDLE_TO_BATTLE_PHASE = 6;
+const BATTLE_TO_MAIN2 = 2;
+const BATTLE_TO_END_PHASE = 3;
 const LOCATION_MZONE = 4;
 
 type OcgSession = {
@@ -290,23 +295,78 @@ export async function performOcgEndTurn(matchId: string, userId: string) {
   if (session.busy) throw new Error("O motor já está processando outra ação.");
 
   const pending = getPendingMessage(session);
-  if (
-    !pending ||
-    pending.type !== MESSAGE_SELECT_IDLECMD ||
-    session.players[Number(pending.player)] !== userId ||
-    pending.to_ep !== true
-  ) {
+  if (!pending || session.players[Number(pending.player)] !== userId) {
     throw new Error("O OCGCore não permite terminar o turno agora.");
   }
 
   session.busy = true;
   try {
     const core = await loadOcgCore();
-    core.duelSetResponse(session.handle, {
-      type: RESPONSE_SELECT_IDLECMD,
-      action: IDLE_TO_END_PHASE,
-      index: null,
-    });
+    if (pending.type === MESSAGE_SELECT_IDLECMD && pending.to_ep === true) {
+      core.duelSetResponse(session.handle, {
+        type: RESPONSE_SELECT_IDLECMD,
+        action: IDLE_TO_END_PHASE,
+        index: null,
+      });
+    } else if (
+      pending.type === MESSAGE_SELECT_BATTLECMD &&
+      pending.to_ep === true
+    ) {
+      core.duelSetResponse(session.handle, {
+        type: RESPONSE_SELECT_BATTLECMD,
+        action: BATTLE_TO_END_PHASE,
+        index: null,
+      });
+    } else {
+      throw new Error("O OCGCore não permite terminar o turno agora.");
+    }
+    await processUntilDecision(core, session);
+    return getOcgDuelSessionSnapshot(matchId);
+  } finally {
+    session.busy = false;
+  }
+}
+
+export async function performOcgPhaseChange(
+  matchId: string,
+  userId: string,
+  target: "battle" | "main2"
+) {
+  const session = sessions.get(matchId);
+  if (!session) return null;
+  if (session.busy) throw new Error("O motor já está processando outra ação.");
+
+  const pending = getPendingMessage(session);
+  if (!pending || session.players[Number(pending.player)] !== userId) {
+    throw new Error("O OCGCore não permite mudar para essa fase agora.");
+  }
+
+  session.busy = true;
+  try {
+    const core = await loadOcgCore();
+    if (
+      target === "battle" &&
+      pending.type === MESSAGE_SELECT_IDLECMD &&
+      pending.to_bp === true
+    ) {
+      core.duelSetResponse(session.handle, {
+        type: RESPONSE_SELECT_IDLECMD,
+        action: IDLE_TO_BATTLE_PHASE,
+        index: null,
+      });
+    } else if (
+      target === "main2" &&
+      pending.type === MESSAGE_SELECT_BATTLECMD &&
+      pending.to_m2 === true
+    ) {
+      core.duelSetResponse(session.handle, {
+        type: RESPONSE_SELECT_BATTLECMD,
+        action: BATTLE_TO_MAIN2,
+        index: null,
+      });
+    } else {
+      throw new Error("O OCGCore não permite mudar para essa fase agora.");
+    }
     await processUntilDecision(core, session);
     return getOcgDuelSessionSnapshot(matchId);
   } finally {
