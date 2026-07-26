@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
+import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({ goFirst: z.boolean() });
+
+function shuffle(cards: number[]) {
+  const result = [...cards];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const target = randomInt(index + 1);
+    [result[index], result[target]] = [result[target], result[index]];
+  }
+  return result;
+}
 
 export async function POST(
   request: Request,
@@ -31,6 +41,37 @@ export async function POST(
   }
   const opponent = room.players.find((player) => player.userId !== userId)!;
   const firstPlayerId = parsed.data.goFirst ? userId : opponent.userId;
+  const decks = await prisma.deck.findMany({
+    where: { id: { in: room.players.map((player) => player.deckId) } },
+    include: { cards: true },
+  });
+  const deckById = new Map(decks.map((deck) => [deck.id, deck]));
+  const enginePlayers: Record<
+    string,
+    { deck: number[]; hand: number[]; extra: number[] }
+  > = {};
+
+  for (const player of room.players) {
+    const deck = deckById.get(player.deckId);
+    if (!deck) {
+      return NextResponse.json(
+        { error: "O deck de um dos jogadores não foi encontrado." },
+        { status: 409 }
+      );
+    }
+    const expand = (section: string) =>
+      deck.cards
+        .filter((entry) => entry.section === section)
+        .flatMap((entry) =>
+          Array.from({ length: entry.quantity }, () => entry.cardId)
+        );
+    const main = shuffle(expand("main"));
+    enginePlayers[player.userId] = {
+      hand: main.splice(0, 5),
+      deck: main,
+      extra: shuffle(expand("extra")),
+    };
+  }
 
   await prisma.match.update({
     where: { id: room.id },
@@ -40,6 +81,13 @@ export async function POST(
       currentTurn: 1,
       currentPhase: "draw",
       firstPlayerId,
+      engineState: {
+        players: enginePlayers,
+        fields: {
+          [room.players[0].userId]: { monsters: [], spellTraps: [] },
+          [room.players[1].userId]: { monsters: [], spellTraps: [] },
+        },
+      },
     },
   });
 
