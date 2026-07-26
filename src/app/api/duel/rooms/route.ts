@@ -52,11 +52,29 @@ export async function POST() {
   }
 
   const room = await prisma.$transaction(async (tx) => {
+    // Uma nova busca substitui qualquer fila antiga desta conta.
+    const ownWaitingRooms = await tx.match.findMany({
+      where: {
+        status: "waiting",
+        players: { some: { userId } },
+      },
+      include: { players: true },
+    });
+    for (const staleRoom of ownWaitingRooms) {
+      if (staleRoom.players.length !== 1) continue;
+      await tx.matchPlayer.deleteMany({ where: { matchId: staleRoom.id } });
+      await tx.match.delete({ where: { id: staleRoom.id } });
+    }
+
+    const activeSince = new Date(Date.now() - 5_000);
     const waiting = await tx.match.findFirst({
       where: {
         status: "waiting",
         format: deck.format,
-        players: { none: { userId } },
+        players: {
+          none: { userId },
+          some: { lastSeenAt: { gte: activeSince } },
+        },
       },
       orderBy: { createdAt: "asc" },
       include: { players: true },
@@ -64,7 +82,12 @@ export async function POST() {
 
     if (waiting && waiting.players.length === 1) {
       await tx.matchPlayer.create({
-        data: { matchId: waiting.id, userId, deckId: deck.id },
+        data: {
+          matchId: waiting.id,
+          userId,
+          deckId: deck.id,
+          lastSeenAt: new Date(),
+        },
       });
       return tx.match.update({
         where: { id: waiting.id },
@@ -80,7 +103,9 @@ export async function POST() {
     return tx.match.create({
       data: {
         format: deck.format,
-        players: { create: { userId, deckId: deck.id } },
+        players: {
+          create: { userId, deckId: deck.id, lastSeenAt: new Date() },
+        },
       },
       include: { players: true },
     });
