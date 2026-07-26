@@ -3,6 +3,7 @@ import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { DuelPlayerState } from "@/lib/duel/game-state";
 
 const schema = z.object({ goFirst: z.boolean() });
 
@@ -48,7 +49,7 @@ export async function POST(
   const deckById = new Map(decks.map((deck) => [deck.id, deck]));
   const enginePlayers: Record<
     string,
-    { deck: number[]; hand: number[]; extra: number[] }
+    DuelPlayerState
   > = {};
 
   for (const player of room.players) {
@@ -70,6 +71,9 @@ export async function POST(
       hand: main.splice(0, 5),
       deck: main,
       extra: shuffle(expand("extra")),
+      monsters: [],
+      spellTraps: [],
+      normalSummoned: false,
     };
   }
 
@@ -83,10 +87,8 @@ export async function POST(
       firstPlayerId,
       engineState: {
         players: enginePlayers,
-        fields: {
-          [room.players[0].userId]: { monsters: [], spellTraps: [] },
-          [room.players[1].userId]: { monsters: [], spellTraps: [] },
-        },
+        turnPlayerId: firstPlayerId,
+        turn: 1,
       },
     },
   });
