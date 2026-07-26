@@ -30,6 +30,7 @@ type RoomState = {
   status: "waiting" | "rps" | "choosing" | "active";
   meId: string;
   rpsRound: number;
+  rpsDeadline?: string | null;
   rpsWinnerId?: string;
   firstPlayerId?: string;
   players: {
@@ -360,22 +361,48 @@ function PreDuelGate({ roomId }: { roomId: string }) {
   const [room, setRoom] = useState<RoomState>();
   const [sending, setSending] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(15);
+  const [syncError, setSyncError] = useState(false);
 
   useEffect(() => {
     let active = true;
     async function refresh() {
-      const response = await fetch(`/api/duel/rooms/${roomId}`, {
+      const response = await fetch(
+        `/api/duel/rooms/${roomId}?time=${Date.now()}`,
+        {
         cache: "no-store",
-      });
-      if (response.ok && active) setRoom(await response.json());
+          headers: { "Cache-Control": "no-cache" },
+        }
+      );
+      if (response.ok && active) {
+        setRoom(await response.json());
+        setSyncError(false);
+      } else if (active) {
+        setSyncError(true);
+      }
     }
     refresh();
-    const timer = window.setInterval(refresh, 1000);
+    const timer = window.setInterval(refresh, 700);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
   }, [roomId]);
+
+  useEffect(() => {
+    function updateCountdown() {
+      if (!room?.rpsDeadline) {
+        setSecondsLeft(15);
+        return;
+      }
+      setSecondsLeft(
+        Math.max(0, Math.ceil((new Date(room.rpsDeadline).getTime() - Date.now()) / 1000))
+      );
+    }
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 250);
+    return () => window.clearInterval(timer);
+  }, [room?.rpsDeadline]);
 
   if (room?.status === "active") return null;
   const me = room?.players.find((player) => player.id === room.meId);
@@ -438,6 +465,9 @@ function PreDuelGate({ roomId }: { roomId: string }) {
               Rodada {room.rpsRound}
             </p>
             <h1 className="mt-2 text-2xl font-black">Pedra, papel ou tesoura</h1>
+            <div className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-edison-gold/40 bg-edison-gold/10 font-mono text-xl font-black text-edison-gold">
+              {secondsLeft}
+            </div>
             <p className="mt-2 text-sm text-white/50">
               {me?.choiceSubmitted
                 ? "Escolha enviada. Aguardando o outro duelista."
@@ -460,6 +490,11 @@ function PreDuelGate({ roomId }: { roomId: string }) {
                 </button>
               ))}
             </div>
+            {syncError && (
+              <p className="mt-4 text-xs text-red-300">
+                Reconectando à sala...
+              </p>
+            )}
           </>
         ) : winner ? (
           <>
