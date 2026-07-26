@@ -177,19 +177,7 @@ function ZoneRow({
   );
 }
 
-function CardInspector({
-  card,
-  actions = [],
-  acting,
-  actionError,
-  onAction,
-}: {
-  card?: Card;
-  actions?: DuelCardAction[];
-  acting?: boolean;
-  actionError?: string;
-  onAction?: (action: DuelCardAction, cardId: number) => void;
-}) {
+function CardInspector({ card }: { card?: Card }) {
   const [panel, setPanel] = useState<"card" | "chat" | "log">("card");
   const [chatText, setChatText] = useState("");
   const [messages, setMessages] = useState<string[]>([]);
@@ -273,29 +261,6 @@ function CardInspector({
             <p className="mt-3 whitespace-pre-line text-sm leading-6 text-white/75">
               {card.description}
             </p>
-            {actions.length > 0 && (
-              <div className="mt-4 grid gap-2 border-t border-white/10 pt-4">
-                {actions.map((action) => (
-                  <button
-                    key={action}
-                    onClick={() => onAction?.(action, card.id)}
-                    disabled={acting}
-                    className="rounded-lg bg-edison-gold px-3 py-2.5 text-xs font-black text-black transition hover:brightness-110 disabled:opacity-40"
-                  >
-                    {{
-                      summon: "Normal Summon",
-                      set_monster: "Set",
-                      set_spell_trap: "Set",
-                      activate: "Ativar efeito",
-                      special_summon: "Special Summon",
-                    }[action]}
-                  </button>
-                ))}
-              </div>
-            )}
-            {actionError && (
-              <p className="mt-3 text-xs text-red-300">{actionError}</p>
-            )}
           </div>
         </>
       ) : panel === "card" ? (
@@ -623,6 +588,7 @@ export default function DuelPlayPage() {
   const [gameState, setGameState] = useState<RoomGameState | null>();
   const [actionError, setActionError] = useState<string>();
   const [acting, setActing] = useState(false);
+  const [selectedHandIndex, setSelectedHandIndex] = useState<number>();
 
   useEffect(() => {
     setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
@@ -702,6 +668,8 @@ export default function DuelPlayPage() {
     if (!response.ok) {
       const result = await response.json();
       setActionError(result.error ?? "Não foi possível realizar esta ação.");
+    } else {
+      setSelectedHandIndex(undefined);
     }
     setActing(false);
   }
@@ -720,13 +688,7 @@ export default function DuelPlayPage() {
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
 
       <div className="relative z-10 mx-auto grid h-screen w-full max-w-[1600px] grid-cols-[clamp(300px,25vw,360px)_minmax(0,1fr)] items-center gap-2 overflow-hidden p-2">
-        <CardInspector
-          card={selectedCard}
-          actions={selectedActions}
-          acting={acting}
-          actionError={actionError}
-          onAction={handleCardAction}
-        />
+        <CardInspector card={selectedCard} />
 
         <main className="relative mx-auto flex h-[calc(100vh-16px)] max-h-[1000px] w-full max-w-[1160px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-2 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,transparent_0,transparent_28%,rgba(168,85,247,.5)_29%,transparent_30%,transparent_43%,rgba(34,211,238,.35)_44%,transparent_45%)]" />
@@ -851,20 +813,62 @@ export default function DuelPlayPage() {
               {!loading &&
                 hand.map((card, index) =>
                   card.imageUrl ? (
-                    <button
+                    <div
                       key={`${card.id}-${index}`}
-                      onClick={() => setSelectedCard(card)}
-                      className="group relative h-[clamp(126px,19vh,184px)] aspect-[421/614] transition hover:z-10 hover:-translate-y-2 hover:scale-105"
+                      className="group relative h-[clamp(126px,19vh,184px)] aspect-[421/614] transition hover:z-20"
                     >
-                      <Image
-                        src={card.imageUrl}
-                        alt={card.name}
-                        fill
-                        sizes="80px"
-                        className="rounded object-cover shadow-xl"
-                        unoptimized
-                      />
-                    </button>
+                      {selectedHandIndex === index &&
+                        selectedActions.length > 0 && (
+                          <div className="absolute bottom-[calc(100%+6px)] left-1/2 z-50 flex -translate-x-1/2 gap-1 rounded-lg border border-white/15 bg-[#111018]/95 p-1.5 shadow-2xl backdrop-blur">
+                            {selectedActions.map((action) => (
+                              <button
+                                key={action}
+                                type="button"
+                                onClick={() => handleCardAction(action, card.id)}
+                                disabled={acting}
+                                className="whitespace-nowrap rounded-md bg-edison-gold px-2.5 py-1.5 text-[10px] font-black text-black transition hover:brightness-110 disabled:opacity-40"
+                              >
+                                {{
+                                  summon: "Normal Summon",
+                                  set_monster: "Set",
+                                  set_spell_trap: "Set",
+                                  activate: "Ativar efeito",
+                                  special_summon: "Special Summon",
+                                }[action]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCard(card);
+                          setSelectedHandIndex((current) =>
+                            current === index ? undefined : index
+                          );
+                          setActionError(undefined);
+                        }}
+                        className={`relative h-full w-full transition hover:-translate-y-2 hover:scale-105 ${
+                          selectedHandIndex === index
+                            ? "-translate-y-2 ring-2 ring-edison-gold"
+                            : ""
+                        }`}
+                      >
+                        <Image
+                          src={card.imageUrl}
+                          alt={card.name}
+                          fill
+                          sizes="80px"
+                          className="rounded object-cover shadow-xl"
+                          unoptimized
+                        />
+                      </button>
+                      {selectedHandIndex === index && actionError && (
+                        <p className="absolute left-1/2 top-[calc(100%+4px)] z-50 w-48 -translate-x-1/2 rounded bg-red-950/95 px-2 py-1 text-center text-[9px] text-red-200">
+                          {actionError}
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <CardBack key={`${card.id}-${index}`} small />
                   )
