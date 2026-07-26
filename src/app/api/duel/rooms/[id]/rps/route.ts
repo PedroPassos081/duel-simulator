@@ -32,7 +32,14 @@ export async function POST(
       where: { id: params.id, status: "rps", players: { some: { userId } } },
       include: { players: true },
     });
-    if (!room || room.players.length !== 2) return null;
+    if (
+      !room ||
+      room.players.length !== 2 ||
+      !room.rpsDeadline ||
+      room.rpsDeadline.getTime() <= Date.now()
+    ) {
+      return null;
+    }
 
     await tx.matchPlayer.update({
       where: { matchId_userId: { matchId: room.id, userId } },
@@ -53,7 +60,10 @@ export async function POST(
       });
       await tx.match.update({
         where: { id: room.id },
-        data: { rpsRound: { increment: 1 } },
+        data: {
+          rpsRound: { increment: 1 },
+          rpsDeadline: new Date(Date.now() + 15_000),
+        },
       });
       return { status: "tie" };
     }
