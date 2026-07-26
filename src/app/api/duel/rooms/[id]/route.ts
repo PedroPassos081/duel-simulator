@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isDuelGameState } from "@/lib/duel/game-state";
+import { getOcgDuelSessionSnapshot } from "@/lib/duel/ocgcore-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -176,6 +177,7 @@ export async function GET(
     rpsDeadline: room.rpsDeadline?.toISOString() ?? null,
     rpsWinnerId: room.rpsWinnerId,
     firstPlayerId: room.firstPlayerId,
+    ocgCore: getOcgDuelSessionSnapshot(room.id),
     game:
       room.status === "active" && ownState
         ? {
