@@ -7,7 +7,10 @@ import {
   type DuelGameState,
   type DuelPlayerState,
 } from "@/lib/duel/game-state";
-import { performOcgMonsterAction } from "@/lib/duel/ocgcore-session";
+import {
+  performOcgEndTurn,
+  performOcgMonsterAction,
+} from "@/lib/duel/ocgcore-session";
 
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("next_phase") }),
@@ -133,6 +136,19 @@ export async function POST(
     if (!["main1", "main2", "end"].includes(phase)) {
       return NextResponse.json(
         { error: "Não é possível terminar o turno nesta fase." },
+        { status: 409 }
+      );
+    }
+    try {
+      await performOcgEndTurn(room.id, userId);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "O OCGCore não permitiu terminar o turno.",
+        },
         { status: 409 }
       );
     }
