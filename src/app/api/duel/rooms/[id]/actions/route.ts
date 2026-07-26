@@ -15,6 +15,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.enum(["summon", "set_monster", "set_spell_trap", "activate"]),
     cardId: z.number().int().positive(),
+    zone: z.number().int().min(0).max(4),
   }),
 ]);
 
@@ -139,6 +140,8 @@ export async function POST(
       room.players.map((entry) => entry.userId)
     ).phase;
   } else {
+    const selectedZone =
+      "zone" in parsed.data ? parsed.data.zone : -1;
     if (!["main1", "main2"].includes(phase)) {
       return NextResponse.json(
         { error: "Esta ação só pode ser feita em uma Main Phase." },
@@ -164,9 +167,13 @@ export async function POST(
       parsed.data.type === "activate"
     ) {
       const normalizedType = card.type.toLowerCase();
+      const zoneOccupied = player.spellTraps.some(
+        (entry) => entry.zone === selectedZone
+      );
       if (
         isMonster(card.type) ||
         player.spellTraps.length >= 5 ||
+        zoneOccupied ||
         (parsed.data.type === "activate" && !normalizedType.includes("spell"))
       ) {
         return NextResponse.json(
@@ -176,6 +183,7 @@ export async function POST(
       }
       player.spellTraps.push({
         cardId: card.id,
+        zone: selectedZone,
         position:
           parsed.data.type === "activate" ? "face_up_attack" : "face_down",
       });
@@ -189,7 +197,14 @@ export async function POST(
         };
       }
     } else {
-      if (!isMonster(card.type) || player.monsters.length >= 5) {
+      const zoneOccupied = player.monsters.some(
+        (entry) => entry.zone === selectedZone
+      );
+      if (
+        !isMonster(card.type) ||
+        player.monsters.length >= 5 ||
+        zoneOccupied
+      ) {
         return NextResponse.json(
           { error: "Não é possível colocar este monstro no campo." },
           { status: 409 }
@@ -204,6 +219,7 @@ export async function POST(
       player.normalSummoned = true;
       player.monsters.push({
         cardId: card.id,
+        zone: selectedZone,
         position:
           parsed.data.type === "summon"
             ? "face_up_attack"
