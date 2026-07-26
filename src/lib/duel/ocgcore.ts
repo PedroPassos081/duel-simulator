@@ -3,9 +3,10 @@ import "server-only";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { getOcgCoreResourceStatus } from "@/lib/duel/ocgcore-resources";
 
 type OcgCore = {
-  getVersion(): [number, number];
+  getVersion(): readonly [number, number];
 };
 
 type OcgCoreModule = {
@@ -39,14 +40,14 @@ export function loadOcgCore() {
 export async function getOcgCoreStatus() {
   const core = await loadOcgCore();
   const [major, minor] = core.getVersion();
-  const cardDatabaseConfigured = Boolean(process.env.OCGCORE_CARD_DB_PATH);
-  const scriptsConfigured = Boolean(process.env.OCGCORE_SCRIPT_DIR);
+  const resources = getOcgCoreResourceStatus();
 
   return {
     available: true,
     version: `${major}.${minor}`,
-    cardDatabaseConfigured,
-    scriptsConfigured,
-    readyForDuels: cardDatabaseConfigured && scriptsConfigured,
+    cardDatabaseConfigured: resources.cardDatabaseConfigured,
+    scriptsConfigured: resources.scriptsConfigured,
+    readyForDuels:
+      resources.cardDatabaseConfigured && resources.scriptsConfigured,
   };
 }
