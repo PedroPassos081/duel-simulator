@@ -1,5 +1,6 @@
 export type FieldCardState = {
   cardId: number;
+  zone: number;
   position:
     | "face_up_attack"
     | "face_up_defense"
