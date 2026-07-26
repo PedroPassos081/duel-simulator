@@ -40,6 +40,11 @@ type OcgCore = {
   duelProcess(handle: unknown): Promise<number> | number;
   duelGetMessage(handle: unknown): Array<Record<string, unknown>>;
   duelSetResponse(handle: unknown, response: Record<string, unknown>): void;
+  loadScript(
+    handle: unknown,
+    name: string,
+    content: string
+  ): Promise<boolean> | boolean;
 };
 
 type OcgCoreModule = {
