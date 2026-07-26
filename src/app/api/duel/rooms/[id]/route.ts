@@ -111,12 +111,56 @@ export async function GET(
         ...ownState.hand,
         ...ownState.monsters.map((entry) => entry.cardId),
         ...ownState.spellTraps.map((entry) => entry.cardId),
+        ...(opponentState?.monsters
+          .filter((entry) => !entry.position.startsWith("face_down"))
+          .map((entry) => entry.cardId) ?? []),
+        ...(opponentState?.spellTraps
+          .filter((entry) => !entry.position.startsWith("face_down"))
+          .map((entry) => entry.cardId) ?? []),
       ]
     : [];
   const visibleCards = ownState
     ? await prisma.card.findMany({ where: { id: { in: visibleCardIds } } })
     : [];
   const cardById = new Map(visibleCards.map((card) => [card.id, card]));
+  const isYourTurn = storedState?.turnPlayerId === userId;
+  const inMainPhase = ["main1", "main2"].includes(room.currentPhase);
+  const legalActions: Record<string, string[]> = {};
+  if (ownState) {
+    for (const cardId of ownState.hand) {
+      const card = cardById.get(cardId);
+      if (!card) continue;
+      const type = card.type.toLowerCase();
+      const monster = !type.includes("spell") && !type.includes("trap");
+      const actions: string[] = [];
+      if (isYourTurn && inMainPhase) {
+        if (
+          monster &&
+          !ownState.normalSummoned &&
+          ownState.monsters.length < 5
+        ) {
+          actions.push("summon", "set_monster");
+        }
+        if (!monster && ownState.spellTraps.length < 5) {
+          actions.push("set_spell_trap");
+        }
+      }
+      legalActions[String(cardId)] = actions;
+    }
+  }
+
+  const fieldView = (
+    entries: NonNullable<typeof ownState>["monsters"],
+    revealFaceDown: boolean
+  ) =>
+    entries.map((entry) => {
+      const faceDown = entry.position.startsWith("face_down");
+      return {
+        card: !faceDown || revealFaceDown ? cardById.get(entry.cardId) : undefined,
+        faceDown,
+        position: entry.position,
+      };
+    });
 
   return NextResponse.json({
     id: room.id,
@@ -134,20 +178,23 @@ export async function GET(
             ownHand: ownState.hand
               .map((cardId) => cardById.get(cardId))
               .filter(Boolean),
-            ownMonsters: ownState.monsters
-              .map((entry) => cardById.get(entry.cardId))
-              .filter(Boolean),
-            ownSpellTraps: ownState.spellTraps
-              .map((entry) => cardById.get(entry.cardId))
-              .filter(Boolean),
+            ownMonsters: fieldView(ownState.monsters, true),
+            ownSpellTraps: fieldView(ownState.spellTraps, true),
+            opponentMonsters: opponentState
+              ? fieldView(opponentState.monsters, false)
+              : [],
+            opponentSpellTraps: opponentState
+              ? fieldView(opponentState.spellTraps, false)
+              : [],
             ownDeckCount: ownState.deck.length,
             ownExtraCount: ownState.extra.length,
             opponentHandCount: opponentState?.hand.length ?? 0,
             opponentDeckCount: opponentState?.deck.length ?? 0,
             opponentExtraCount: opponentState?.extra.length ?? 0,
-            isYourTurn: storedState.turnPlayerId === userId,
+            isYourTurn,
             currentTurn: storedState.turn,
             currentPhase: room.currentPhase,
+            legalActions,
           }
         : null,
     players: room.players.map((player) => ({
