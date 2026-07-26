@@ -156,6 +156,7 @@ model Match {
   currentPhase  String    @default("waiting")
   engineState   Json?
   rpsRound      Int       @default(1)
+  rpsDeadline   DateTime?
   rpsWinnerId   String?
   firstPlayerId String?
 
