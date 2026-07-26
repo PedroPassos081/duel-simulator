@@ -7,6 +7,7 @@ import {
   type DuelGameState,
   type DuelPlayerState,
 } from "@/lib/duel/game-state";
+import { performOcgMonsterAction } from "@/lib/duel/ocgcore-session";
 
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("next_phase") }),
@@ -160,6 +161,31 @@ export async function POST(
     });
     if (!card) {
       return NextResponse.json({ error: "Carta não encontrada." }, { status: 404 });
+    }
+
+    if (
+      parsed.data.type === "summon" ||
+      parsed.data.type === "set_monster"
+    ) {
+      try {
+        await performOcgMonsterAction({
+          matchId: room.id,
+          userId,
+          action: parsed.data.type,
+          cardId: parsed.data.cardId,
+          zone: selectedZone,
+        });
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "O OCGCore recusou essa ação.",
+          },
+          { status: 409 }
+        );
+      }
     }
 
     if (
