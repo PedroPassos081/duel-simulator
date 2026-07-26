@@ -44,8 +44,10 @@ type RoomState = {
 
 type RoomGameState = {
   ownHand: Card[];
-  ownMonsters: Card[];
-  ownSpellTraps: Card[];
+  ownMonsters: FieldCardView[];
+  ownSpellTraps: FieldCardView[];
+  opponentMonsters: FieldCardView[];
+  opponentSpellTraps: FieldCardView[];
   ownDeckCount: number;
   ownExtraCount: number;
   opponentHandCount: number;
@@ -54,6 +56,20 @@ type RoomGameState = {
   isYourTurn: boolean;
   currentTurn: number;
   currentPhase: string;
+  legalActions: Record<string, DuelCardAction[]>;
+};
+
+type DuelCardAction =
+  | "summon"
+  | "set_monster"
+  | "set_spell_trap"
+  | "activate"
+  | "special_summon";
+
+type FieldCardView = {
+  card?: Card;
+  faceDown: boolean;
+  position: string;
 };
 
 const PHASES = ["DP", "SP", "MP1", "BP", "MP2", "EP"];
@@ -121,29 +137,34 @@ function ZoneRow({
 }: {
   opponent?: boolean;
   kind: "monster" | "spell";
-  cards?: Card[];
+  cards?: FieldCardView[];
   onSelect?: (card: Card) => void;
 }) {
   const pink = kind === "spell";
   return (
     <div className={`grid grid-cols-[repeat(5,104px)] justify-center gap-1 ${opponent ? "rotate-180" : ""}`}>
       {Array.from({ length: 5 }, (_, index) => {
-        const card = cards[index];
-        return card?.imageUrl ? (
+        const fieldCard = cards[index];
+        const card = fieldCard?.card;
+        return fieldCard ? (
           <button
-            key={`${card.id}-${index}`}
-            onClick={() => onSelect?.(card)}
+            key={`${card?.id ?? "hidden"}-${index}`}
+            onClick={() => card && onSelect?.(card)}
             className="group relative h-[clamp(96px,14.5vh,142px)] aspect-[0.72] min-h-0 justify-self-center overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110"
-            title={`Ver ${card.name}`}
+            title={card ? `Ver ${card.name}` : "Carta virada para baixo"}
           >
-            <Image
-              src={card.imageUrl}
-              alt={card.name}
-              fill
-              sizes="100px"
-              className="object-cover"
-              unoptimized
-            />
+            {fieldCard.faceDown || !card?.imageUrl ? (
+              <CardBack />
+            ) : (
+              <Image
+                src={card.imageUrl}
+                alt={card.name}
+                fill
+                sizes="100px"
+                className="object-cover"
+                unoptimized
+              />
+            )}
           </button>
         ) : (
           <EmptyZone
@@ -156,7 +177,19 @@ function ZoneRow({
   );
 }
 
-function CardInspector({ card }: { card?: Card }) {
+function CardInspector({
+  card,
+  actions = [],
+  acting,
+  actionError,
+  onAction,
+}: {
+  card?: Card;
+  actions?: DuelCardAction[];
+  acting?: boolean;
+  actionError?: string;
+  onAction?: (action: DuelCardAction, cardId: number) => void;
+}) {
   const [panel, setPanel] = useState<"card" | "chat" | "log">("card");
   const [chatText, setChatText] = useState("");
   const [messages, setMessages] = useState<string[]>([]);
@@ -240,6 +273,29 @@ function CardInspector({ card }: { card?: Card }) {
             <p className="mt-3 whitespace-pre-line text-sm leading-6 text-white/75">
               {card.description}
             </p>
+            {actions.length > 0 && (
+              <div className="mt-4 grid gap-2 border-t border-white/10 pt-4">
+                {actions.map((action) => (
+                  <button
+                    key={action}
+                    onClick={() => onAction?.(action, card.id)}
+                    disabled={acting}
+                    className="rounded-lg bg-edison-gold px-3 py-2.5 text-xs font-black text-black transition hover:brightness-110 disabled:opacity-40"
+                  >
+                    {{
+                      summon: "Normal Summon",
+                      set_monster: "Set",
+                      set_spell_trap: "Set",
+                      activate: "Ativar efeito",
+                      special_summon: "Special Summon",
+                    }[action]}
+                  </button>
+                ))}
+              </div>
+            )}
+            {actionError && (
+              <p className="mt-3 text-xs text-red-300">{actionError}</p>
+            )}
           </div>
         </>
       ) : panel === "card" ? (
@@ -599,13 +655,9 @@ export default function DuelPlayPage() {
   const hand = gameState?.ownHand ?? mainDeck.slice(0, 5);
   const fieldMonsters = gameState?.ownMonsters ?? [];
   const fieldSpellTraps = gameState?.ownSpellTraps ?? [];
-  const selectedIsInHand = Boolean(
-    selectedCard && hand.some((card) => card.id === selectedCard.id)
-  );
-  const selectedIsMonster = selectedCard
-    ? !selectedCard.type.toLowerCase().includes("spell") &&
-      !selectedCard.type.toLowerCase().includes("trap")
-    : false;
+  const selectedActions = selectedCard
+    ? gameState?.legalActions[String(selectedCard.id)] ?? []
+    : [];
 
   useEffect(() => {
     setPlayerDeckCount(
@@ -654,6 +706,11 @@ export default function DuelPlayPage() {
     setActing(false);
   }
 
+  function handleCardAction(action: DuelCardAction, cardId: number) {
+    if (action === "activate" || action === "special_summon") return;
+    sendAction({ type: action, cardId });
+  }
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-[#080b12] text-white">
       {roomId && (
@@ -663,7 +720,13 @@ export default function DuelPlayPage() {
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
 
       <div className="relative z-10 mx-auto grid h-screen w-full max-w-[1600px] grid-cols-[clamp(300px,25vw,360px)_minmax(0,1fr)] items-center gap-2 overflow-hidden p-2">
-        <CardInspector card={selectedCard} />
+        <CardInspector
+          card={selectedCard}
+          actions={selectedActions}
+          acting={acting}
+          actionError={actionError}
+          onAction={handleCardAction}
+        />
 
         <main className="relative mx-auto flex h-[calc(100vh-16px)] max-h-[1000px] w-full max-w-[1160px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-2 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,transparent_0,transparent_28%,rgba(168,85,247,.5)_29%,transparent_30%,transparent_43%,rgba(34,211,238,.35)_44%,transparent_45%)]" />
@@ -690,8 +753,17 @@ export default function DuelPlayPage() {
                 <EmptyZone accent="blue" />
               </div>
               <div className="flex flex-col items-center gap-2">
-                <ZoneRow opponent kind="spell" />
-                <ZoneRow opponent kind="monster" />
+                <ZoneRow
+                  opponent
+                  kind="spell"
+                  cards={gameState?.opponentSpellTraps}
+                />
+                <ZoneRow
+                  opponent
+                  kind="monster"
+                  cards={gameState?.opponentMonsters}
+                  onSelect={setSelectedCard}
+                />
               </div>
               <div className="flex flex-col items-center gap-2">
                 <EmptyZone accent="pink" />
@@ -753,12 +825,14 @@ export default function DuelPlayPage() {
                 <div>
                   <ZoneRow
                     kind="monster"
+                    cards={fieldMonsters}
                     onSelect={setSelectedCard}
                   />
                 </div>
                 <div>
                   <ZoneRow
                     kind="spell"
+                    cards={fieldSpellTraps}
                     onSelect={setSelectedCard}
                   />
                 </div>
@@ -768,54 +842,6 @@ export default function DuelPlayPage() {
                 <DeckPile count={playerDeckCount} />
               </div>
             </div>
-
-            {selectedCard && selectedIsInHand && (
-              <div className="mx-auto flex min-h-9 items-center justify-center gap-2">
-                {selectedIsMonster ? (
-                  <>
-                    <button
-                      onClick={() =>
-                        sendAction({ type: "summon", cardId: selectedCard.id })
-                      }
-                      disabled={acting || !gameState?.isYourTurn}
-                      className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-black disabled:opacity-35"
-                    >
-                      Invocar
-                    </button>
-                    <button
-                      onClick={() =>
-                        sendAction({
-                          type: "set_monster",
-                          cardId: selectedCard.id,
-                        })
-                      }
-                      disabled={acting || !gameState?.isYourTurn}
-                      className="rounded-lg bg-white/10 px-4 py-2 text-xs font-black disabled:opacity-35"
-                    >
-                      Baixar em defesa
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() =>
-                      sendAction({
-                        type: "set_spell_trap",
-                        cardId: selectedCard.id,
-                      })
-                    }
-                    disabled={acting || !gameState?.isYourTurn}
-                    className="rounded-lg bg-fuchsia-700 px-4 py-2 text-xs font-black disabled:opacity-35"
-                  >
-                    Colocar no campo
-                  </button>
-                )}
-                {actionError && (
-                  <span className="max-w-xs text-xs text-red-300">
-                    {actionError}
-                  </span>
-                )}
-              </div>
-            )}
 
             <div className="flex h-[clamp(132px,20vh,190px)] shrink-0 items-center justify-center gap-2 overflow-visible">
               {loading &&
