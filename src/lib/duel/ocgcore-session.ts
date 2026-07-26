@@ -9,6 +9,7 @@ import {
 } from "@/lib/duel/ocgcore-resources";
 
 const MODE_MR5 = 190464n;
+const PSEUDO_SHUFFLE = 16n;
 const LOCATION_DECK = 1;
 const LOCATION_EXTRA = 64;
 const POSITION_FACEDOWN_DEFENSE = 8;
@@ -121,7 +122,9 @@ export async function createOcgDuelSession(input: {
   const errors: string[] = [];
   const core = await loadOcgCore();
   const handle = await core.createDuel({
-    flags: MODE_MR5,
+    // O servidor já embaralha os decks com uma fonte segura. Desabilitar o
+    // segundo embaralhamento do core mantém a mão visual e a mão real iguais.
+    flags: MODE_MR5 | PSEUDO_SHUFFLE,
     seed: createSeed(),
     team1: {
       startingLP: 8_000,
@@ -156,14 +159,14 @@ export async function createOcgDuelSession(input: {
   try {
     for (const [team, playerId] of session.players.entries()) {
       const deck = input.decks[playerId];
-      for (const code of deck.main) {
+      for (const code of [...deck.main].reverse()) {
         await core.duelNewCard(handle, {
           team: team as 0 | 1,
           duelist: 0,
           code,
           controller: team as 0 | 1,
           location: LOCATION_DECK,
-          sequence: 2,
+          sequence: 0,
           position: POSITION_FACEDOWN_DEFENSE,
         });
       }
