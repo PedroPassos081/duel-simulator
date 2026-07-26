@@ -133,7 +133,7 @@ export async function GET(
       const type = card.type.toLowerCase();
       const monster = !type.includes("spell") && !type.includes("trap");
       const actions: string[] = [];
-      if (isYourTurn && inMainPhase) {
+      if (isYourTurn && inMainPhase && !storedState?.chain) {
         if (
           monster &&
           !ownState.normalSummoned &&
@@ -198,6 +198,22 @@ export async function GET(
             currentTurn: storedState.turn,
             currentPhase: room.currentPhase,
             legalActions,
+            chain: storedState.chain
+              ? {
+                  card:
+                    cardById.get(
+                      storedState.chain.links[
+                        storedState.chain.links.length - 1
+                      ].cardId
+                    ) ?? null,
+                  linkCount: storedState.chain.links.length,
+                  awaitingYou: storedState.chain.awaitingPlayerId === userId,
+                  controllerId:
+                    storedState.chain.links[
+                      storedState.chain.links.length - 1
+                    ].playerId,
+                }
+              : null,
           }
         : null,
     players: room.players.map((player) => ({
