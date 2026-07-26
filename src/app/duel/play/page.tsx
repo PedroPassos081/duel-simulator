@@ -82,7 +82,7 @@ type FieldCardView = {
 type PendingPlacement = {
   action: Exclude<DuelCardAction, "special_summon">;
   cardId: number;
-  kind: "monster" | "spell";
+  kind: "monster" | "spell" | "field";
 };
 
 const PHASES = ["DP", "SP", "MP1", "BP", "MP2", "EP"];
@@ -207,6 +207,60 @@ function ZoneRow({
         );
       })}
     </div>
+  );
+}
+
+function FieldZone({
+  fieldCard,
+  opponent = false,
+  selectable = false,
+  onSelect,
+  onZoneSelect,
+}: {
+  fieldCard?: FieldCardView;
+  opponent?: boolean;
+  selectable?: boolean;
+  onSelect?: (card: Card) => void;
+  onZoneSelect?: () => void;
+}) {
+  const card = fieldCard?.card;
+  if (fieldCard) {
+    return (
+      <button
+        type="button"
+        onClick={() => card && onSelect?.(card)}
+        className={`relative h-[clamp(96px,14.5vh,142px)] aspect-[0.72] overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 ${
+          opponent ? "rotate-180" : ""
+        }`}
+      >
+        {fieldCard.faceDown || !card?.imageUrl ? (
+          <CardBack />
+        ) : (
+          <Image
+            src={card.imageUrl}
+            alt={card.name}
+            fill
+            sizes="100px"
+            className="object-cover"
+            unoptimized
+          />
+        )}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={!selectable}
+      onClick={onZoneSelect}
+      className={`h-[clamp(96px,14.5vh,142px)] aspect-[0.72] overflow-hidden rounded-[3px] p-0 transition [&>div]:h-full [&>div]:w-full ${
+        selectable
+          ? "animate-pulse ring-2 ring-inset ring-edison-gold hover:bg-edison-gold/15"
+          : ""
+      }`}
+    >
+      <EmptyZone accent="pink" />
+    </button>
   );
 }
 
@@ -655,6 +709,10 @@ export default function DuelPlayPage() {
   const hand = gameState?.ownHand ?? mainDeck.slice(0, 5);
   const fieldMonsters = gameState?.ownMonsters ?? [];
   const fieldSpellTraps = gameState?.ownSpellTraps ?? [];
+  const ownFieldSpell = fieldSpellTraps.find((entry) => entry.zone === 5);
+  const opponentFieldSpell = gameState?.opponentSpellTraps.find(
+    (entry) => entry.zone === 5
+  );
   const selectedActions = selectedCard
     ? gameState?.legalActions[String(selectedCard.id)] ?? []
     : [];
@@ -717,11 +775,19 @@ export default function DuelPlayPage() {
 
   function handleCardAction(action: DuelCardAction, cardId: number) {
     if (action === "special_summon") return;
+    const card = hand.find((entry) => entry.id === cardId);
+    const fieldSpell = `${card?.type ?? ""} ${card?.race ?? ""}`
+      .toLowerCase()
+      .includes("field");
     setPendingPlacement({
       action,
       cardId,
       kind:
-        action === "summon" || action === "set_monster" ? "monster" : "spell",
+        action === "summon" || action === "set_monster"
+          ? "monster"
+          : fieldSpell
+            ? "field"
+            : "spell",
     });
     setSelectedHandIndex(undefined);
   }
@@ -843,7 +909,11 @@ export default function DuelPlayPage() {
                 />
               </div>
               <div className="flex flex-col items-center gap-2">
-                <EmptyZone accent="pink" />
+                <FieldZone
+                  opponent
+                  fieldCard={opponentFieldSpell}
+                  onSelect={setSelectedCard}
+                />
                 <EmptyZone accent="blue" />
               </div>
             </div>
@@ -886,7 +956,12 @@ export default function DuelPlayPage() {
 
             <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-sky-400/20 bg-sky-950/[0.1] p-1">
               <div className="flex flex-col items-center gap-2">
-                <EmptyZone accent="pink" />
+                <FieldZone
+                  fieldCard={ownFieldSpell}
+                  selectable={pendingPlacement?.kind === "field"}
+                  onSelect={setSelectedCard}
+                  onZoneSelect={() => placeCard(5)}
+                />
                 <div className="relative">
                   <EmptyZone accent="blue" />
                   <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
