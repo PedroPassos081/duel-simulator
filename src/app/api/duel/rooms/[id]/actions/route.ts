@@ -8,9 +8,11 @@ import {
   type DuelPlayerState,
 } from "@/lib/duel/game-state";
 import {
+  passOcgChain,
   performOcgEndTurn,
   performOcgPhaseChange,
   performOcgMonsterAction,
+  performOcgSpellAction,
 } from "@/lib/duel/ocgcore-session";
 
 const actionSchema = z.discriminatedUnion("type", [
@@ -24,7 +26,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.enum(["summon", "set_monster", "set_spell_trap", "activate"]),
     cardId: z.number().int().positive(),
-    zone: z.number().int().min(0).max(4),
+    zone: z.number().int().min(0).max(5),
   }),
 ]);
 
@@ -91,6 +93,7 @@ export async function POST(
     }
 
     const link = state.chain.links[state.chain.links.length - 1];
+    await passOcgChain(room.id, userId);
     const controller = state.players[link.playerId];
     const card = await prisma.card.findUnique({ where: { id: link.cardId } });
     if (!card) {
@@ -241,6 +244,44 @@ export async function POST(
         );
       }
     }
+    if (
+      parsed.data.type === "set_spell_trap" ||
+      parsed.data.type === "activate"
+    ) {
+      const fieldSpell = `${card.type} ${card.race ?? ""}`
+        .toLowerCase()
+        .includes("field");
+      if ((fieldSpell && selectedZone !== 5) || (!fieldSpell && selectedZone === 5)) {
+        return NextResponse.json(
+          {
+            error: fieldSpell
+              ? "Magias de Campo devem ser colocadas na Zona de Campo."
+              : "Esta carta deve usar uma zona de Spell/Trap.",
+          },
+          { status: 409 }
+        );
+      }
+      try {
+        await performOcgSpellAction({
+          matchId: room.id,
+          userId,
+          action: parsed.data.type,
+          cardId: parsed.data.cardId,
+          zone: selectedZone,
+          fieldSpell,
+        });
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "O OCGCore recusou essa ação.",
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     if (
       parsed.data.type === "set_spell_trap" ||
@@ -252,7 +293,7 @@ export async function POST(
       );
       if (
         isMonster(card.type) ||
-        player.spellTraps.length >= 5 ||
+        player.spellTraps.filter((entry) => entry.zone < 5).length >= 5 ||
         zoneOccupied ||
         (parsed.data.type === "activate" && !normalizedType.includes("spell"))
       ) {
