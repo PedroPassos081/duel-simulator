@@ -5,6 +5,12 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
 export async function GET(
   _request: Request,
   { params }: { params: { id: string } }
@@ -15,7 +21,7 @@ export async function GET(
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
 
-  const room = await prisma.match.findFirst({
+  let room = await prisma.match.findFirst({
     where: { id: params.id, players: { some: { userId } } },
     include: {
       players: {
@@ -32,6 +38,60 @@ export async function GET(
     return NextResponse.json({ error: "Sala não encontrada." }, { status: 404 });
   }
 
+  if (
+    room.status === "rps" &&
+    room.rpsDeadline &&
+    room.rpsDeadline.getTime() <= Date.now()
+  ) {
+    const submitted = room.players.filter((player) => player.rpsChoice);
+
+    if (submitted.length === 1) {
+      room = await prisma.match.update({
+        where: { id: room.id },
+        data: {
+          status: "choosing",
+          currentPhase: "choosing_order",
+          rpsWinnerId: submitted[0].userId,
+          rpsDeadline: null,
+        },
+        include: {
+          players: {
+            select: {
+              userId: true,
+              result: true,
+              rpsChoice: true,
+              user: { select: { name: true, username: true, image: true } },
+            },
+          },
+        },
+      });
+    } else if (submitted.length === 0) {
+      room = await prisma.$transaction(async (tx) => {
+        await tx.matchPlayer.updateMany({
+          where: { matchId: room!.id },
+          data: { rpsChoice: null },
+        });
+        return tx.match.update({
+          where: { id: room!.id },
+          data: {
+            rpsRound: { increment: 1 },
+            rpsDeadline: new Date(Date.now() + 15_000),
+          },
+          include: {
+            players: {
+              select: {
+                userId: true,
+                result: true,
+                rpsChoice: true,
+                user: { select: { name: true, username: true, image: true } },
+              },
+            },
+          },
+        });
+      });
+    }
+  }
+
   return NextResponse.json({
     id: room.id,
     status: room.status,
@@ -39,6 +99,7 @@ export async function GET(
     currentPhase: room.currentPhase,
     meId: userId,
     rpsRound: room.rpsRound,
+    rpsDeadline: room.rpsDeadline?.toISOString() ?? null,
     rpsWinnerId: room.rpsWinnerId,
     firstPlayerId: room.firstPlayerId,
     players: room.players.map((player) => ({
@@ -52,7 +113,7 @@ export async function GET(
           ? player.rpsChoice
           : undefined,
     })),
-  });
+  }, { headers: NO_CACHE_HEADERS });
 }
 
 export async function DELETE(
