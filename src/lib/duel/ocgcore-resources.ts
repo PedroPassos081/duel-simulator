@@ -2,6 +2,7 @@ import "server-only";
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Database, SqlJsStatic } from "sql.js";
@@ -133,6 +134,23 @@ export async function readOcgScript(name: string): Promise<string | null> {
   for (const candidate of candidates) {
     try {
       return await readFile(candidate, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return null;
+}
+
+export function readOcgScriptSync(name: string): string | null {
+  const { scripts } = getOcgCoreResourcePaths();
+  const candidates = [
+    safeScriptPath(scripts, name),
+    safeScriptPath(scripts, `official/${name}`),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    try {
+      return readFileSync(candidate, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
