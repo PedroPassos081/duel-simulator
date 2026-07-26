@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { DuelPlayerState } from "@/lib/duel/game-state";
+import { createOcgDuelSession } from "@/lib/duel/ocgcore-session";
 
 const schema = z.object({ goFirst: z.boolean() });
 
@@ -51,6 +52,7 @@ export async function POST(
     string,
     DuelPlayerState
   > = {};
+  const ocgDecks: Record<string, { main: number[]; extra: number[] }> = {};
 
   for (const player of room.players) {
     const deck = deckById.get(player.deckId);
@@ -67,10 +69,12 @@ export async function POST(
           Array.from({ length: entry.quantity }, () => entry.cardId)
         );
     const main = shuffle(expand("main"));
+    const extra = shuffle(expand("extra"));
+    ocgDecks[player.userId] = { main: [...main], extra: [...extra] };
     enginePlayers[player.userId] = {
       hand: main.splice(0, 5),
       deck: main,
-      extra: shuffle(expand("extra")),
+      extra,
       monsters: [],
       spellTraps: [],
       graveyard: [],
@@ -94,5 +98,18 @@ export async function POST(
     },
   });
 
-  return NextResponse.json({ status: "active", firstPlayerId });
+  let ocgCore = null;
+  try {
+    ocgCore = await createOcgDuelSession({
+      matchId: room.id,
+      firstPlayerId,
+      secondPlayerId:
+        room.players.find((player) => player.userId !== firstPlayerId)!.userId,
+      decks: ocgDecks,
+    });
+  } catch (error) {
+    console.error(`Falha ao iniciar OCGCore na sala ${room.id}:`, error);
+  }
+
+  return NextResponse.json({ status: "active", firstPlayerId, ocgCore });
 }
