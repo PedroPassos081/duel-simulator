@@ -17,9 +17,11 @@ const PROCESS_END = 0;
 const PROCESS_WAITING = 1;
 const MESSAGE_SELECT_IDLECMD = 11;
 const MESSAGE_SELECT_BATTLECMD = 10;
+const MESSAGE_SELECT_CHAIN = 16;
 const MESSAGE_SELECT_PLACE = 18;
 const RESPONSE_SELECT_IDLECMD = 1;
 const RESPONSE_SELECT_BATTLECMD = 0;
+const RESPONSE_SELECT_CHAIN = 8;
 const RESPONSE_SELECT_PLACE = 10;
 const IDLE_SUMMON = 0;
 const IDLE_MONSTER_SET = 3;
@@ -79,6 +81,17 @@ async function processUntilDecision(
       return;
     }
     if (status === PROCESS_WAITING) {
+      const pending = getPendingMessage(session);
+      if (
+        pending?.type === MESSAGE_SELECT_CHAIN &&
+        pending.forced !== true
+      ) {
+        core.duelSetResponse(session.handle, {
+          type: RESPONSE_SELECT_CHAIN,
+          index: null,
+        });
+        continue;
+      }
       session.status = "waiting";
       return;
     }
