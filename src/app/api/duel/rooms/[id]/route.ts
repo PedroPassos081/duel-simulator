@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isDuelGameState } from "@/lib/duel/game-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,23 +98,25 @@ export async function GET(
     }
   }
 
-  type StoredPlayerState = {
-    deck: number[];
-    hand: number[];
-    extra: number[];
-  };
-  const storedState = room.engineState as
-    | { players?: Record<string, StoredPlayerState> }
-    | null;
-  const ownState = storedState?.players?.[userId];
+  const storedState = isDuelGameState(room.engineState)
+    ? room.engineState
+    : null;
+  const ownState = storedState?.players[userId];
   const opponentPlayer = room.players.find((player) => player.userId !== userId);
   const opponentState = opponentPlayer
-    ? storedState?.players?.[opponentPlayer.userId]
+    ? storedState?.players[opponentPlayer.userId]
     : undefined;
-  const handCards = ownState
-    ? await prisma.card.findMany({ where: { id: { in: ownState.hand } } })
+  const visibleCardIds = ownState
+    ? [
+        ...ownState.hand,
+        ...ownState.monsters.map((entry) => entry.cardId),
+        ...ownState.spellTraps.map((entry) => entry.cardId),
+      ]
     : [];
-  const handById = new Map(handCards.map((card) => [card.id, card]));
+  const visibleCards = ownState
+    ? await prisma.card.findMany({ where: { id: { in: visibleCardIds } } })
+    : [];
+  const cardById = new Map(visibleCards.map((card) => [card.id, card]));
 
   return NextResponse.json({
     id: room.id,
@@ -129,13 +132,22 @@ export async function GET(
       room.status === "active" && ownState
         ? {
             ownHand: ownState.hand
-              .map((cardId) => handById.get(cardId))
+              .map((cardId) => cardById.get(cardId))
+              .filter(Boolean),
+            ownMonsters: ownState.monsters
+              .map((entry) => cardById.get(entry.cardId))
+              .filter(Boolean),
+            ownSpellTraps: ownState.spellTraps
+              .map((entry) => cardById.get(entry.cardId))
               .filter(Boolean),
             ownDeckCount: ownState.deck.length,
             ownExtraCount: ownState.extra.length,
             opponentHandCount: opponentState?.hand.length ?? 0,
             opponentDeckCount: opponentState?.deck.length ?? 0,
             opponentExtraCount: opponentState?.extra.length ?? 0,
+            isYourTurn: storedState.turnPlayerId === userId,
+            currentTurn: storedState.turn,
+            currentPhase: room.currentPhase,
           }
         : null,
     players: room.players.map((player) => ({
