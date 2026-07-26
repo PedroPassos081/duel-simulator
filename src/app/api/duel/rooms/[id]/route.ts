@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isDuelGameState } from "@/lib/duel/game-state";
-import { getOcgDuelSessionSnapshot } from "@/lib/duel/ocgcore-session";
+import {
+  getOcgDuelSessionSnapshot,
+  getOcgLegalActions,
+} from "@/lib/duel/ocgcore-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -152,6 +155,7 @@ export async function GET(
       legalActions[String(cardId)] = actions;
     }
   }
+  const ocgLegalActions = getOcgLegalActions(room.id, userId);
 
   const fieldView = (
     entries: NonNullable<typeof ownState>["monsters"],
@@ -200,7 +204,7 @@ export async function GET(
             isYourTurn,
             currentTurn: storedState.turn,
             currentPhase: room.currentPhase,
-            legalActions,
+            legalActions: ocgLegalActions ?? legalActions,
             chain: storedState.chain
               ? {
                   card:
