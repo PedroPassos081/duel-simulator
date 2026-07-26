@@ -653,7 +653,7 @@ export default function DuelPlayPage() {
     action:
       | { type: "next_phase" | "end_turn" }
       | {
-          type: "summon" | "set_monster" | "set_spell_trap";
+          type: "summon" | "set_monster" | "set_spell_trap" | "activate";
           cardId: number;
         }
   ) {
@@ -675,7 +675,7 @@ export default function DuelPlayPage() {
   }
 
   function handleCardAction(action: DuelCardAction, cardId: number) {
-    if (action === "activate" || action === "special_summon") return;
+    if (action === "special_summon") return;
     sendAction({ type: action, cardId });
   }
 
@@ -832,7 +832,7 @@ export default function DuelPlayPage() {
                                   summon: "Normal Summon",
                                   set_monster: "Set",
                                   set_spell_trap: "Set",
-                                  activate: "Ativar efeito",
+                                  activate: "Ativar",
                                   special_summon: "Special Summon",
                                 }[action]}
                               </button>
