@@ -6,6 +6,39 @@ import { getOcgCoreResourceStatus } from "@/lib/duel/ocgcore-resources";
 
 type OcgCore = {
   getVersion(): readonly [number, number];
+  createDuel(options: {
+    flags: bigint;
+    seed: [bigint, bigint, bigint, bigint];
+    team1: {
+      startingLP: number;
+      startingDrawCount: number;
+      drawCountPerTurn: number;
+    };
+    team2: {
+      startingLP: number;
+      startingDrawCount: number;
+      drawCountPerTurn: number;
+    };
+    cardReader: (code: number) => unknown;
+    scriptReader: (name: string) => string | null;
+    errorHandler?: (type: number, text: string) => void;
+  }): Promise<unknown> | unknown;
+  destroyDuel(handle: unknown): void;
+  duelNewCard(
+    handle: unknown,
+    card: {
+      team: 0 | 1;
+      duelist: number;
+      code: number;
+      controller: 0 | 1;
+      location: number;
+      sequence: number;
+      position: number;
+    }
+  ): Promise<void> | void;
+  startDuel(handle: unknown): Promise<void> | void;
+  duelProcess(handle: unknown): Promise<number> | number;
+  duelGetMessage(handle: unknown): Array<Record<string, unknown>>;
 };
 
 type OcgCoreModule = {
