@@ -129,6 +129,7 @@ export async function readOcgScript(name: string): Promise<string | null> {
   const candidates = [
     safeScriptPath(scripts, name),
     safeScriptPath(scripts, `official/${name}`),
+    safeScriptPath(scripts, `unofficial/${name}`),
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const candidate of candidates) {
@@ -146,6 +147,7 @@ export function readOcgScriptSync(name: string): string | null {
   const candidates = [
     safeScriptPath(scripts, name),
     safeScriptPath(scripts, `official/${name}`),
+    safeScriptPath(scripts, `unofficial/${name}`),
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const candidate of candidates) {
