@@ -34,6 +34,8 @@ const BATTLE_TO_END_PHASE = 3;
 const LOCATION_MZONE = 4;
 const LOCATION_SZONE = 8;
 const LOCATION_FZONE = 256;
+const MESSAGE_MOVE = 50;
+const MESSAGE_DRAW = 90;
 
 type OcgSession = {
   handle: unknown;
@@ -44,6 +46,25 @@ type OcgSession = {
   createdAt: number;
   busy: boolean;
 };
+
+export type OcgStateEvent =
+  | { type: "draw"; playerId: string; cards: number[] }
+  | {
+      type: "move";
+      cardId: number;
+      from: {
+        playerId: string;
+        location: number;
+        sequence: number;
+        position: number;
+      };
+      to: {
+        playerId: string;
+        location: number;
+        sequence: number;
+        position: number;
+      };
+    };
 
 declare global {
   // eslint-disable-next-line no-var
@@ -126,6 +147,61 @@ function cardIndex(
     ? (message[list] as Array<Record<string, unknown>>)
     : [];
   return cards.findIndex((card) => card.code === cardId);
+}
+
+function stateEventsSince(session: OcgSession, start: number): OcgStateEvent[] {
+  const events: OcgStateEvent[] = [];
+  for (const message of session.messages.slice(start)) {
+    if (message.type === MESSAGE_DRAW && typeof message.player === "number") {
+      const drawn = Array.isArray(message.drawn)
+        ? (message.drawn as Array<Record<string, unknown>>)
+        : [];
+      events.push({
+        type: "draw",
+        playerId: session.players[message.player],
+        cards: drawn
+          .map((card) => card.code)
+          .filter((code): code is number => typeof code === "number"),
+      });
+    }
+    if (
+      message.type === MESSAGE_MOVE &&
+      typeof message.card === "number" &&
+      message.from &&
+      message.to
+    ) {
+      const from = message.from as Record<string, unknown>;
+      const to = message.to as Record<string, unknown>;
+      if (
+        typeof from.controller === "number" &&
+        typeof from.location === "number" &&
+        typeof from.sequence === "number" &&
+        typeof from.position === "number" &&
+        typeof to.controller === "number" &&
+        typeof to.location === "number" &&
+        typeof to.sequence === "number" &&
+        typeof to.position === "number"
+      ) {
+        events.push({
+          type: "move",
+          cardId: message.card,
+          from: {
+            playerId: session.players[from.controller],
+            location: from.location,
+            sequence: from.sequence,
+            position: from.position,
+          },
+          to: {
+            playerId: session.players[to.controller],
+            location: to.location,
+            sequence: to.sequence,
+            position: to.position,
+          },
+        });
+      }
+    }
+  }
+  return events;
 }
 
 export async function createOcgDuelSession(input: {
@@ -391,12 +467,16 @@ export async function passOcgChain(matchId: string, userId: string) {
     return null;
   }
   const core = await loadOcgCore();
+  const eventStart = session.messages.length;
   core.duelSetResponse(session.handle, {
     type: RESPONSE_SELECT_CHAIN,
     index: null,
   });
   await processUntilDecision(core, session);
-  return getOcgDuelSessionSnapshot(matchId);
+  return {
+    ...getOcgDuelSessionSnapshot(matchId),
+    events: stateEventsSince(session, eventStart),
+  };
 }
 
 export async function performOcgEndTurn(matchId: string, userId: string) {
