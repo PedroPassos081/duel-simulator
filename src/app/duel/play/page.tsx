@@ -686,6 +686,10 @@ export default function DuelPlayPage() {
   async function sendAction(
     action:
       | { type: "next_phase" | "end_turn" }
+      | {
+          type: "select_phase";
+          phase: "standby" | "main1" | "battle" | "main2";
+        }
       | { type: "pass_chain" }
       | {
           type: "summon" | "set_monster" | "set_spell_trap" | "activate";
@@ -729,6 +733,37 @@ export default function DuelPlayPage() {
       cardId: pendingPlacement.cardId,
       zone,
     });
+  }
+
+  function selectPhase(phase: string) {
+    const target = PHASE_KEYS[phase];
+    if (phase === "EP") {
+      sendAction({ type: "end_turn" });
+      return;
+    }
+    if (
+      target === "standby" ||
+      target === "main1" ||
+      target === "battle" ||
+      target === "main2"
+    ) {
+      sendAction({ type: "select_phase", phase: target });
+    }
+  }
+
+  function phaseIsAvailable(phase: string) {
+    if (!gameState?.isYourTurn || acting) return false;
+    const current = gameState.currentPhase;
+    if (phase === "SP") return current === "draw";
+    if (phase === "MP1") return current === "standby";
+    if (phase === "BP") {
+      return current === "main1" && gameState.currentTurn > 1;
+    }
+    if (phase === "MP2") return current === "battle";
+    if (phase === "EP") {
+      return ["main1", "battle", "main2", "end"].includes(current);
+    }
+    return false;
   }
 
   return (
@@ -818,27 +853,23 @@ export default function DuelPlayPage() {
                 {PHASES.map((phase) => (
                   <button
                     key={phase}
-                    disabled
+                    onClick={() => selectPhase(phase)}
+                    disabled={!phaseIsAvailable(phase)}
                     className={`min-w-11 rounded px-3 py-1.5 text-[10px] font-black transition ${
                       PHASE_KEYS[phase] === gameState?.currentPhase
                         ? "bg-emerald-600 text-white shadow-[0_0_14px_rgba(22,163,74,0.35)]"
-                        : "border border-white/10 bg-white/10 text-white/50 hover:bg-white/15 hover:text-white"
+                        : phaseIsAvailable(phase)
+                          ? "border border-emerald-400/30 bg-white/10 text-white hover:bg-emerald-600/30"
+                          : "border border-white/10 bg-white/5 text-white/25"
                     }`}
                   >
                     {phase}
                   </button>
                 ))}
                 <button
-                  onClick={() => sendAction({ type: "next_phase" })}
-                  disabled={acting || !gameState?.isYourTurn}
-                  className="ml-2 rounded bg-emerald-700 px-3 py-1.5 text-[10px] font-black text-white transition hover:bg-emerald-600 disabled:opacity-35"
-                >
-                  Próxima fase
-                </button>
-                <button
                   onClick={() => sendAction({ type: "end_turn" })}
                   disabled={acting || !gameState?.isYourTurn}
-                  className="rounded bg-red-700 px-4 py-1.5 text-[10px] font-black text-white transition hover:bg-red-600 disabled:opacity-35"
+                  className="ml-2 rounded bg-red-700 px-4 py-1.5 text-[10px] font-black text-white transition hover:bg-red-600 disabled:opacity-35"
                 >
                   Terminar turno
                 </button>
