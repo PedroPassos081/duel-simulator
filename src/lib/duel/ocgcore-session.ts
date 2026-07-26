@@ -171,6 +171,14 @@ export async function createOcgDuelSession(input: {
 
   if (!handle) throw new Error("O OCGCore não conseguiu criar o duelo.");
 
+  for (const name of ["constant.lua", "utility.lua"]) {
+    const content = readOcgScriptSync(name);
+    if (!content || !(await core.loadScript(handle, name, content))) {
+      core.destroyDuel(handle);
+      throw new Error(`O OCGCore não conseguiu carregar ${name}.`);
+    }
+  }
+
   const session: OcgSession = {
     handle,
     players: [input.firstPlayerId, input.secondPlayerId],
@@ -341,7 +349,11 @@ export async function performOcgSpellAction(input: {
       action: input.action === "activate" ? IDLE_ACTIVATE : IDLE_SPELL_SET,
       index,
     });
-    await processUntilDecision(core, session, false);
+    await processUntilDecision(
+      core,
+      session,
+      input.action !== "activate"
+    );
     const placeRequest = getPendingMessage(session);
     if (placeRequest?.type === MESSAGE_SELECT_PLACE) {
       core.duelSetResponse(session.handle, {
@@ -354,7 +366,11 @@ export async function performOcgSpellAction(input: {
           },
         ],
       });
-      await processUntilDecision(core, session, false);
+      await processUntilDecision(
+        core,
+        session,
+        input.action !== "activate"
+      );
     }
     return getOcgDuelSessionSnapshot(input.matchId);
   } finally {
