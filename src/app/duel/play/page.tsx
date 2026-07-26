@@ -33,12 +33,22 @@ type RoomState = {
   rpsDeadline?: string | null;
   rpsWinnerId?: string;
   firstPlayerId?: string;
+  game?: RoomGameState | null;
   players: {
     id: string;
     nickname: string;
     choiceSubmitted: boolean;
     rpsChoice?: "rock" | "paper" | "scissors";
   }[];
+};
+
+type RoomGameState = {
+  ownHand: Card[];
+  ownDeckCount: number;
+  ownExtraCount: number;
+  opponentHandCount: number;
+  opponentDeckCount: number;
+  opponentExtraCount: number;
 };
 
 const PHASES = ["DP", "SP", "MP1", "BP", "MP2", "EP"];
@@ -357,7 +367,13 @@ function DuelistHud({ opponent = false }: { opponent?: boolean }) {
   );
 }
 
-function PreDuelGate({ roomId }: { roomId: string }) {
+function PreDuelGate({
+  roomId,
+  onGameState,
+}: {
+  roomId: string;
+  onGameState: (game?: RoomGameState | null) => void;
+}) {
   const [room, setRoom] = useState<RoomState>();
   const [sending, setSending] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -375,7 +391,9 @@ function PreDuelGate({ roomId }: { roomId: string }) {
         }
       );
       if (response.ok && active) {
-        setRoom(await response.json());
+        const nextRoom: RoomState = await response.json();
+        setRoom(nextRoom);
+        onGameState(nextRoom.game);
         setSyncError(false);
       } else if (active) {
         setSyncError(true);
@@ -387,7 +405,7 @@ function PreDuelGate({ roomId }: { roomId: string }) {
       active = false;
       window.clearInterval(timer);
     };
-  }, [roomId]);
+  }, [roomId, onGameState]);
 
   useEffect(() => {
     function updateCountdown() {
@@ -533,6 +551,7 @@ export default function DuelPlayPage() {
   const [selectedCard, setSelectedCard] = useState<Card>();
   const [playerDeckCount, setPlayerDeckCount] = useState(0);
   const [opponentDeckCount, setOpponentDeckCount] = useState(35);
+  const [gameState, setGameState] = useState<RoomGameState | null>();
 
   useEffect(() => {
     setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
@@ -562,22 +581,14 @@ export default function DuelPlayPage() {
     deck?.cards
       .filter((item) => item.section === "extra")
       .reduce((total, item) => total + item.quantity, 0) ?? 0;
-  const hand = mainDeck.slice(0, 5);
-  const fieldMonsters = mainDeck
-    .filter(
-      (card) => !card.type.toLowerCase().includes("spell") && !card.type.toLowerCase().includes("trap")
-    )
-    .slice(0, 1);
-  const fieldSpellTraps = mainDeck
-    .filter((card) => {
-      const type = card.type.toLowerCase();
-      return type.includes("spell") || type.includes("trap");
-    })
-    .slice(0, 2);
+  const hand = gameState?.ownHand ?? mainDeck.slice(0, 5);
 
   useEffect(() => {
-    setPlayerDeckCount(Math.max(mainDeck.length - 5, 0));
-  }, [mainDeck.length]);
+    setPlayerDeckCount(
+      gameState?.ownDeckCount ?? Math.max(mainDeck.length - 5, 0)
+    );
+    setOpponentDeckCount(gameState?.opponentDeckCount ?? 35);
+  }, [gameState, mainDeck.length]);
 
   useEffect(() => {
     function updateDeckCounts(event: Event) {
@@ -598,7 +609,9 @@ export default function DuelPlayPage() {
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-[#080b12] text-white">
-      {roomId && <PreDuelGate roomId={roomId} />}
+      {roomId && (
+        <PreDuelGate roomId={roomId} onGameState={setGameState} />
+      )}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
 
@@ -616,9 +629,12 @@ export default function DuelPlayPage() {
               <DuelistHud opponent />
             </div>
             <div className="mb-2 flex min-h-[58px] items-start justify-center gap-1 pt-1">
-              {Array.from({ length: 5 }, (_, index) => (
+              {Array.from(
+                { length: gameState?.opponentHandCount ?? 5 },
+                (_, index) => (
                 <CardBack key={index} small />
-              ))}
+                )
+              )}
             </div>
 
             <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-red-400/15 bg-red-950/[0.08] p-1">
@@ -676,14 +692,12 @@ export default function DuelPlayPage() {
                 <div>
                   <ZoneRow
                     kind="monster"
-                    cards={fieldMonsters}
                     onSelect={setSelectedCard}
                   />
                 </div>
                 <div>
                   <ZoneRow
                     kind="spell"
-                    cards={fieldSpellTraps}
                     onSelect={setSelectedCard}
                   />
                 </div>
