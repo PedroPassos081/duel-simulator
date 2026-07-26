@@ -200,6 +200,7 @@ export async function POST(
   } else {
     const selectedZone =
       "zone" in parsed.data ? parsed.data.zone : -1;
+    let ocgAwaitingPlayerId: string | null = null;
     if (!["main1", "main2"].includes(phase)) {
       return NextResponse.json(
         { error: "Esta ação só pode ser feita em uma Main Phase." },
@@ -262,7 +263,7 @@ export async function POST(
         );
       }
       try {
-        await performOcgSpellAction({
+        const ocgResult = await performOcgSpellAction({
           matchId: room.id,
           userId,
           action: parsed.data.type,
@@ -270,6 +271,7 @@ export async function POST(
           zone: selectedZone,
           fieldSpell,
         });
+        ocgAwaitingPlayerId = ocgResult?.pendingPlayerId ?? null;
       } catch (error) {
         return NextResponse.json(
           {
@@ -314,7 +316,7 @@ export async function POST(
         )!.userId;
         state.chain = {
           links: [{ playerId: userId, cardId: card.id }],
-          awaitingPlayerId: opponentId,
+          awaitingPlayerId: ocgAwaitingPlayerId ?? opponentId,
         };
       }
     } else {
