@@ -13,6 +13,7 @@ import {
   performOcgPhaseChange,
   performOcgMonsterAction,
   performOcgSpellAction,
+  type OcgStateEvent,
 } from "@/lib/duel/ocgcore-session";
 
 const actionSchema = z.discriminatedUnion("type", [
@@ -58,6 +59,80 @@ function startNextTurn(
   return { state, phase: "draw" };
 }
 
+function removeCardFromLocation(
+  player: DuelPlayerState,
+  location: number,
+  cardId: number,
+  sequence: number
+) {
+  if (location === 1) {
+    const index = player.deck.indexOf(cardId);
+    if (index >= 0) player.deck.splice(index, 1);
+  } else if (location === 2) {
+    const index = player.hand.indexOf(cardId);
+    if (index >= 0) player.hand.splice(index, 1);
+  } else if (location === 4) {
+    const index = player.monsters.findIndex((card) => card.zone === sequence);
+    if (index >= 0) player.monsters.splice(index, 1);
+  } else if (location === 8 || location === 256) {
+    const zone = location === 256 ? 5 : sequence;
+    const index = player.spellTraps.findIndex((card) => card.zone === zone);
+    if (index >= 0) player.spellTraps.splice(index, 1);
+  } else if (location === 16) {
+    const index = player.graveyard.indexOf(cardId);
+    if (index >= 0) player.graveyard.splice(index, 1);
+  } else if (location === 64) {
+    const index = player.extra.indexOf(cardId);
+    if (index >= 0) player.extra.splice(index, 1);
+  }
+}
+
+function applyOcgEvents(state: DuelGameState, events: OcgStateEvent[]) {
+  for (const event of events) {
+    if (event.type === "draw") {
+      const player = state.players[event.playerId];
+      if (!player) continue;
+      for (const cardId of event.cards) {
+        removeCardFromLocation(player, 1, cardId, 0);
+        player.hand.push(cardId);
+      }
+      continue;
+    }
+
+    const fromPlayer = state.players[event.from.playerId];
+    const toPlayer = state.players[event.to.playerId];
+    if (!fromPlayer || !toPlayer) continue;
+    removeCardFromLocation(
+      fromPlayer,
+      event.from.location,
+      event.cardId,
+      event.from.sequence
+    );
+    if (event.to.location === 2) {
+      toPlayer.hand.push(event.cardId);
+    } else if (event.to.location === 16) {
+      toPlayer.graveyard.push(event.cardId);
+    } else if (event.to.location === 4) {
+      toPlayer.monsters.push({
+        cardId: event.cardId,
+        zone: event.to.sequence,
+        position:
+          event.to.position === 8
+            ? "face_down_defense"
+            : event.to.position === 4
+              ? "face_up_defense"
+              : "face_up_attack",
+      });
+    } else if (event.to.location === 8 || event.to.location === 256) {
+      toPlayer.spellTraps.push({
+        cardId: event.cardId,
+        zone: event.to.location === 256 ? 5 : event.to.sequence,
+        position: event.to.position === 8 ? "face_down" : "face_up_attack",
+      });
+    }
+  }
+}
+
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -93,7 +168,9 @@ export async function POST(
     }
 
     const link = state.chain.links[state.chain.links.length - 1];
-    await passOcgChain(room.id, userId);
+    const ocgResult = await passOcgChain(room.id, userId);
+    const ocgEvents = ocgResult?.events ?? [];
+    applyOcgEvents(state, ocgEvents);
     const controller = state.players[link.playerId];
     const card = await prisma.card.findUnique({ where: { id: link.cardId } });
     if (!card) {
@@ -102,7 +179,13 @@ export async function POST(
     const persistent = ["continuous", "field", "equip"].some((kind) =>
       card.type.toLowerCase().includes(kind)
     );
-    if (!persistent) {
+    const movedByCore = ocgEvents.some(
+      (event) =>
+        event.type === "move" &&
+        event.cardId === link.cardId &&
+        event.to.location === 16
+    );
+    if (!persistent && !movedByCore) {
       const fieldIndex = controller.spellTraps.findIndex(
         (entry) => entry.cardId === link.cardId
       );
