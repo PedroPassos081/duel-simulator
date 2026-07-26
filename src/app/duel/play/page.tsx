@@ -196,9 +196,9 @@ function ZoneRow({
             type="button"
             disabled={!selectable}
             onClick={() => onZoneSelect?.(index)}
-            className={`rounded transition ${
+            className={`h-[clamp(96px,14.5vh,142px)] aspect-[0.72] justify-self-center overflow-hidden rounded-[3px] p-0 transition [&>div]:h-full [&>div]:w-full ${
               selectable
-                ? "animate-pulse ring-2 ring-edison-gold hover:bg-edison-gold/15"
+                ? "animate-pulse ring-2 ring-inset ring-edison-gold hover:bg-edison-gold/15"
                 : ""
             }`}
           >
