@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { CircleDollarSign, Gem } from "lucide-react";
 import { auth, signOut } from "@/lib/auth";
@@ -29,8 +30,15 @@ export async function Navbar() {
     <header className="border-b border-edison-border bg-edison-panel">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <nav className="flex items-center gap-6">
-          <Link href="/" className="text-lg font-semibold tracking-tight text-white hover:opacity-90">
-            Duel Simulator
+          <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-white hover:opacity-90">
+            <Image
+              src="/icon.png"
+              alt=""
+              width={36}
+              height={36}
+              className="h-9 w-9 object-contain"
+            />
+            <span className="hidden sm:inline">Duel Simulator</span>
           </Link>
           <Link href="/deck-builder" className="text-sm text-gray-300 hover:text-white transition-colors">
             Deck
