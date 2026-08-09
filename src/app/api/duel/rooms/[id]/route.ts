@@ -183,7 +183,7 @@ export async function GET(
     firstPlayerId: room.firstPlayerId,
     ocgCore: getOcgDuelSessionSnapshot(room.id),
     game:
-      room.status === "active" && ownState
+      ["active", "finished"].includes(room.status) && ownState
         ? {
             ownHand: ownState.hand
               .map((cardId) => cardById.get(cardId))
@@ -201,6 +201,12 @@ export async function GET(
             opponentHandCount: opponentState?.hand.length ?? 0,
             opponentDeckCount: opponentState?.deck.length ?? 0,
             opponentExtraCount: opponentState?.extra.length ?? 0,
+            ownLifePoints: ownState.lifePoints ?? 8_000,
+            opponentLifePoints: opponentState?.lifePoints ?? 8_000,
+            winnerId: storedState.winnerId ?? null,
+            youWon: storedState.winnerId
+              ? storedState.winnerId === userId
+              : null,
             isYourTurn,
             currentTurn: storedState.turn,
             currentPhase: room.currentPhase,
