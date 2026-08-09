@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
@@ -44,9 +45,14 @@ function LoginForm() {
 
       <section className="w-full max-w-md rounded-2xl border border-edison-border bg-edison-panel/90 p-6 shadow-2xl shadow-black/30 backdrop-blur sm:p-8">
         <div className="mb-7 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-edison-gold/30 bg-edison-gold/10 text-xl font-bold text-edison-gold">
-            E
-          </div>
+          <Image
+            src="/icon.png"
+            alt="Logo do Duel Simulator"
+            width={128}
+            height={128}
+            priority
+            className="mx-auto mb-4 h-28 w-28 object-contain drop-shadow-[0_0_24px_rgba(212,175,55,0.22)]"
+          />
           <h1 className="text-2xl font-semibold tracking-tight">
             Bem-vindo de volta
           </h1>
