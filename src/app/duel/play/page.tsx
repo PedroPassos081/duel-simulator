@@ -43,6 +43,7 @@ type RoomState = {
 };
 
 type RoomGameState = {
+  meId: string;
   ownHand: Card[];
   ownMonsters: FieldCardView[];
   ownSpellTraps: FieldCardView[];
@@ -61,6 +62,7 @@ type RoomGameState = {
   currentTurn: number;
   currentPhase: string;
   legalActions: Record<string, DuelCardAction[]>;
+  specialSummonCandidates: Card[];
   decision?: OcgDecision | null;
   chain?: {
     card: Card | null;
@@ -97,6 +99,16 @@ type OcgDecision =
       cardId: number;
       positions: number[];
       card: Card | null;
+    }
+  | {
+      type: "place";
+      count: number;
+      places: Array<{
+        index: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+      }>;
     };
 
 type DuelCardAction =
@@ -722,6 +734,8 @@ export default function DuelPlayPage() {
   const [selectedHandIndex, setSelectedHandIndex] = useState<number>();
   const [pendingPlacement, setPendingPlacement] = useState<PendingPlacement>();
   const [selectedDecisionIndices, setSelectedDecisionIndices] = useState<number[]>([]);
+  const [selectedPlaceIndices, setSelectedPlaceIndices] = useState<number[]>([]);
+  const [specialSummonOpen, setSpecialSummonOpen] = useState(false);
 
   useEffect(() => {
     setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
@@ -771,6 +785,7 @@ export default function DuelPlayPage() {
 
   useEffect(() => {
     setSelectedDecisionIndices([]);
+    setSelectedPlaceIndices([]);
   }, [decisionSignature]);
 
   useEffect(() => {
@@ -811,12 +826,14 @@ export default function DuelPlayPage() {
           optionIndex?: number;
           cardIndices?: number[] | null;
           position?: number;
+          placeIndices?: number[];
         }
       | {
           type: "summon" | "set_monster" | "set_spell_trap" | "activate";
           cardId: number;
           zone: number;
         }
+      | { type: "special_summon"; cardId: number }
   ) {
     if (!roomId || acting) return;
     setActing(true);
@@ -832,12 +849,17 @@ export default function DuelPlayPage() {
     } else {
       setSelectedHandIndex(undefined);
       setPendingPlacement(undefined);
+      setSelectedPlaceIndices([]);
+      setSpecialSummonOpen(false);
     }
     setActing(false);
   }
 
   function handleCardAction(action: DuelCardAction, cardId: number) {
-    if (action === "special_summon") return;
+    if (action === "special_summon") {
+      sendAction({ type: "special_summon", cardId });
+      return;
+    }
     const card = hand.find((entry) => entry.id === cardId);
     const fieldSpell = `${card?.type ?? ""} ${card?.race ?? ""}`
       .toLowerCase()
@@ -902,6 +924,51 @@ export default function DuelPlayPage() {
       )}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
+
+      {specialSummonOpen && !gameState?.decision && (
+        <div className="absolute inset-0 z-[94] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-violet-400/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
+            <h2 className="text-xl font-black">Invocações especiais disponíveis</h2>
+            <p className="mt-1 text-xs text-white/50">
+              O OCGCore continuará pedindo materiais, posição e zona quando necessário.
+            </p>
+            <div className="mt-5 flex max-h-[52vh] flex-wrap justify-center gap-3 overflow-y-auto">
+              {gameState?.specialSummonCandidates.map((card) => (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => handleCardAction("special_summon", card.id)}
+                  disabled={acting}
+                  className="w-28 rounded-lg border border-violet-400/25 bg-violet-400/10 p-2 transition hover:border-violet-300 hover:bg-violet-400/20 disabled:opacity-40"
+                >
+                  <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                    {card.imageUrl && (
+                      <Image
+                        src={card.imageUrl}
+                        alt={card.name}
+                        fill
+                        sizes="112px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    )}
+                  </div>
+                  <span className="mt-2 block text-[10px] font-black leading-tight">
+                    {card.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSpecialSummonOpen(false)}
+              className="mt-5 rounded-lg border border-white/15 bg-white/5 px-6 py-2.5 text-xs font-black"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
 
       {gameState?.decision && (
         <div className="absolute inset-0 z-[95] flex items-center justify-center bg-black/65 p-4">
@@ -1081,6 +1148,62 @@ export default function DuelPlayPage() {
               </>
             )}
 
+            {gameState.decision.type === "place" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">Escolha a zona</h2>
+                <p className="mt-1 text-xs text-white/50">
+                  Selecione exatamente {gameState.decision.count} zona(s) permitida(s) pelo motor.
+                </p>
+                <div className="mt-5 grid max-h-[48vh] gap-2 overflow-y-auto sm:grid-cols-2">
+                  {gameState.decision.places.map((place) => {
+                    const selected = selectedPlaceIndices.includes(place.index);
+                    return (
+                      <button
+                        key={place.index}
+                        type="button"
+                        onClick={() =>
+                          setSelectedPlaceIndices((current) =>
+                            current.includes(place.index)
+                              ? current.filter((index) => index !== place.index)
+                              : current.length <
+                                  (gameState.decision?.type === "place"
+                                    ? gameState.decision.count
+                                    : 0)
+                                ? [...current, place.index]
+                                : current
+                          )
+                        }
+                        className={`rounded-lg border px-4 py-3 text-left text-xs font-bold transition ${
+                          selected
+                            ? "border-edison-gold bg-edison-gold/20"
+                            : "border-white/10 bg-white/5 hover:border-white/30"
+                        }`}
+                      >
+                        {place.controllerId === gameState.meId ? "Sua" : "Do oponente"}{" "}
+                        {place.location === 4 ? "Zona de Monstro" : "Zona de Magia/Armadilha"}{" "}
+                        {place.sequence + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    sendAction({
+                      type: "ocg_decision",
+                      placeIndices: selectedPlaceIndices,
+                    })
+                  }
+                  disabled={
+                    acting || selectedPlaceIndices.length !== gameState.decision.count
+                  }
+                  className="mt-5 rounded-lg bg-edison-gold px-6 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                >
+                  Confirmar zona
+                </button>
+              </>
+            )}
+
             {actionError && (
               <p className="mt-4 rounded bg-red-950/80 px-3 py-2 text-xs text-red-200">
                 {actionError}
@@ -1236,6 +1359,15 @@ export default function DuelPlayPage() {
                   <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
                     {extraCount}
                   </span>
+                  {(gameState?.specialSummonCandidates.length ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSpecialSummonOpen(true)}
+                      className="absolute inset-x-1 bottom-1 rounded bg-violet-700/95 px-1 py-1 text-[8px] font-black uppercase tracking-wide text-white shadow-lg hover:bg-violet-600"
+                    >
+                      Invocar
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="space-y-1.5">
