@@ -615,6 +615,7 @@ export async function performOcgDecision(input: {
   cardIndices?: number[] | null;
   position?: number;
   placeIndices?: number[];
+  preserveOptionalChain?: boolean;
 }) {
   const session = sessions.get(input.matchId);
   if (!session) return null;
@@ -727,7 +728,15 @@ export async function performOcgDecision(input: {
     const core = await loadOcgCore();
     const eventStart = session.messages.length;
     core.duelSetResponse(session.handle, response as never);
-    await processUntilDecision(core, session, false);
+    // Triggered effects such as Armed Dragon LV3 can open an optional
+    // chain window before asking for the card/position/place choices.
+    // Preserve it only when the application already has a visible chain;
+    // otherwise pass the orphan window so the next real decision is exposed.
+    await processUntilDecision(
+      core,
+      session,
+      !input.preserveOptionalChain
+    );
     return {
       ...getOcgDuelSessionSnapshot(input.matchId),
       events: stateEventsSince(session, eventStart),
