@@ -10,6 +10,8 @@ import {
 import {
   getOcgLegalActions,
   passOcgChain,
+  performOcgAttack,
+  performOcgChainActivation,
   performOcgDecision,
   performOcgEndTurn,
   performOcgPhaseChange,
@@ -26,6 +28,11 @@ const actionSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("end_turn") }),
   z.object({ type: z.literal("pass_chain") }),
+  z.object({ type: z.literal("force_pass_chain") }),
+  z.object({
+    type: z.literal("activate_chain"),
+    cardId: z.number().int().positive(),
+  }),
   z.object({
     type: z.literal("ocg_decision"),
     yes: z.boolean().optional(),
@@ -39,11 +46,51 @@ const actionSchema = z.discriminatedUnion("type", [
     cardId: z.number().int().positive(),
   }),
   z.object({
-    type: z.enum(["summon", "set_monster", "set_spell_trap", "activate"]),
+    type: z.literal("attack"),
+    cardId: z.number().int().positive(),
+    zone: z.number().int().min(0).max(4),
+  }),
+  z.object({
+    type: z.enum(["summon", "set_monster", "activate"]),
     cardId: z.number().int().positive(),
     zone: z.number().int().min(0).max(5),
   }),
+  z.object({
+    type: z.literal("set_spell_trap"),
+    cardId: z.number().int().positive(),
+  }),
 ]);
+
+const MESSAGE_SELECT_CHAIN = 16;
+const CHAIN_RESPONSE_MS = 20_000;
+
+function chainDeadline() {
+  return new Date(Date.now() + CHAIN_RESPONSE_MS).toISOString();
+}
+
+function isOcgDecision(messageType: number | null) {
+  return typeof messageType === "number" && messageType >= 12 && messageType <= 26;
+}
+
+function advanceChain(
+  state: DuelGameState,
+  pendingMessageType: number | null,
+  pendingPlayerId: string | null
+) {
+  if (!state.chain) return "resolved" as const;
+  if (pendingMessageType === MESSAGE_SELECT_CHAIN && pendingPlayerId) {
+    state.chain.awaitingPlayerId = pendingPlayerId;
+    state.chain.deadlineAt = chainDeadline();
+    return "chain" as const;
+  }
+  if (isOcgDecision(pendingMessageType) && pendingPlayerId) {
+    state.chain.awaitingPlayerId = pendingPlayerId;
+    delete state.chain.deadlineAt;
+    return "decision" as const;
+  }
+  delete state.chain;
+  return "resolved" as const;
+}
 
 function nextPhase(current: string, turn: number) {
   if (current === "draw") return "standby";
@@ -270,6 +317,11 @@ export async function POST(
 
   const state = structuredClone(room.engineState) as DuelGameState;
   if (parsed.data.type === "ocg_decision") {
+    const pendingChainResponderId = state.pendingChainSource
+      ? room.players.find(
+          (player) => player.userId !== state.pendingChainSource!.playerId
+        )?.userId
+      : undefined;
     try {
       const ocgResult = await performOcgDecision({
         matchId: room.id,
@@ -279,21 +331,32 @@ export async function POST(
         cardIndices: parsed.data.cardIndices,
         position: parsed.data.position,
         placeIndices: parsed.data.placeIndices,
-        preserveOptionalChain: Boolean(state.chain),
+        preserveOptionalChain: Boolean(state.chain || state.pendingChainSource),
+        preserveOptionalChainForUserId: state.chain
+          ? undefined
+          : pendingChainResponderId,
       });
       if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
       const resolvedPhase = applyOcgEvents(state, ocgResult.events ?? []);
       if (state.chain) {
-        const pendingType = ocgResult.pendingMessageType;
+        advanceChain(
+          state,
+          ocgResult.pendingMessageType ?? null,
+          ocgResult.pendingPlayerId
+        );
+      } else if (state.pendingChainSource) {
         if (
-          typeof pendingType === "number" &&
-          pendingType >= 12 &&
-          pendingType <= 26 &&
+          ocgResult.pendingMessageType === MESSAGE_SELECT_CHAIN &&
           ocgResult.pendingPlayerId
         ) {
-          state.chain.awaitingPlayerId = ocgResult.pendingPlayerId;
-        } else {
-          delete state.chain;
+          state.chain = {
+            links: [state.pendingChainSource],
+            awaitingPlayerId: ocgResult.pendingPlayerId,
+            deadlineAt: chainDeadline(),
+          };
+          delete state.pendingChainSource;
+        } else if (!isOcgDecision(ocgResult.pendingMessageType ?? null)) {
+          delete state.pendingChainSource;
         }
       }
       await persistDuelState(room.id, state, resolvedPhase);
@@ -312,18 +375,66 @@ export async function POST(
   }
 
   if (state.chain) {
+    if (parsed.data.type === "activate_chain") {
+      if (state.chain.awaitingPlayerId !== userId) {
+        return NextResponse.json(
+          { error: "A corrente está aguardando a resposta do outro jogador." },
+          { status: 409 }
+        );
+      }
+      try {
+        const ocgResult = await performOcgChainActivation({
+          matchId: room.id,
+          userId,
+          cardId: parsed.data.cardId,
+        });
+        if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
+        const resolvedPhase = applyOcgEvents(state, ocgResult.events ?? []);
+        state.chain.links.push({ playerId: userId, cardId: parsed.data.cardId });
+        const chainStatus = advanceChain(
+          state,
+          ocgResult.pendingMessageType ?? null,
+          ocgResult.pendingPlayerId
+        );
+        await persistDuelState(room.id, state, resolvedPhase);
+        return NextResponse.json({ ok: true, chainStatus });
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "O OCGCore recusou esta resposta.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    const forcePass = parsed.data.type === "force_pass_chain";
+    const normalPass = parsed.data.type === "pass_chain";
+    const deadlineExpired = state.chain.deadlineAt
+      ? new Date(state.chain.deadlineAt).getTime() <= Date.now()
+      : false;
     if (
-      parsed.data.type !== "pass_chain" ||
-      state.chain.awaitingPlayerId !== userId
+      (!normalPass && !forcePass) ||
+      (normalPass && state.chain.awaitingPlayerId !== userId) ||
+      (forcePass &&
+        (state.chain.awaitingPlayerId === userId || !deadlineExpired))
     ) {
       return NextResponse.json(
-        { error: "A corrente está aguardando a resposta do outro jogador." },
+        {
+          error: forcePass
+            ? "A chain só pode ser encerrada pelo outro jogador após os 20 segundos."
+            : "A corrente está aguardando a resposta do outro jogador.",
+        },
         { status: 409 }
       );
     }
 
     const link = state.chain.links[state.chain.links.length - 1];
-    const ocgResult = await passOcgChain(room.id, userId);
+    const respondingPlayerId = state.chain.awaitingPlayerId;
+    const ocgResult = await passOcgChain(room.id, respondingPlayerId);
     if (!ocgResult) {
       return NextResponse.json(
         { error: "A sessão do OCGCore não está aguardando essa resposta." },
@@ -332,15 +443,14 @@ export async function POST(
     }
     const ocgEvents = ocgResult?.events ?? [];
     const resolvedPhase = applyOcgEvents(state, ocgEvents);
-    if (
-      typeof ocgResult.pendingMessageType === "number" &&
-      ocgResult.pendingMessageType >= 12 &&
-      ocgResult.pendingMessageType <= 26 &&
+    const chainStatus = advanceChain(
+      state,
+      ocgResult.pendingMessageType ?? null,
       ocgResult.pendingPlayerId
-    ) {
-      state.chain.awaitingPlayerId = ocgResult.pendingPlayerId;
+    );
+    if (chainStatus !== "resolved") {
       await persistDuelState(room.id, state, resolvedPhase);
-      return NextResponse.json({ ok: true, awaitingDecision: true });
+      return NextResponse.json({ ok: true, chainStatus });
     }
     const controller = state.players[link.playerId];
     const card = await prisma.card.findUnique({ where: { id: link.cardId } });
@@ -363,13 +473,15 @@ export async function POST(
       if (fieldIndex >= 0) controller.spellTraps.splice(fieldIndex, 1);
       controller.graveyard.push(link.cardId);
     }
-    delete state.chain;
-
     await persistDuelState(room.id, state, resolvedPhase);
     return NextResponse.json({ ok: true, chainResolved: true });
   }
 
-  if (parsed.data.type === "pass_chain") {
+  if (
+    parsed.data.type === "pass_chain" ||
+    parsed.data.type === "force_pass_chain" ||
+    parsed.data.type === "activate_chain"
+  ) {
     return NextResponse.json(
       { error: "Não existe uma corrente aguardando resposta." },
       { status: 409 }
@@ -450,10 +562,51 @@ export async function POST(
         { status: 409 }
       );
     }
+  } else if (parsed.data.type === "attack") {
+    const attackAction = parsed.data;
+    if (phase !== "battle") {
+      return NextResponse.json(
+        { error: "Os monstros só podem atacar durante a Battle Phase." },
+        { status: 409 }
+      );
+    }
+    const attacker = player.monsters.find(
+      (entry) =>
+        entry.cardId === attackAction.cardId &&
+        entry.zone === attackAction.zone
+    );
+    if (!attacker || attacker.position !== "face_up_attack") {
+      return NextResponse.json(
+        { error: "Escolha um monstro em posição de ataque." },
+        { status: 409 }
+      );
+    }
+    try {
+      const ocgResult = await performOcgAttack({
+        matchId: room.id,
+        userId,
+        cardId: attackAction.cardId,
+        zone: attackAction.zone,
+      });
+      if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
+      const corePhase = applyOcgEvents(state, ocgResult.events ?? []);
+      if (corePhase) phase = corePhase;
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "O OCGCore recusou este ataque.",
+        },
+        { status: 409 }
+      );
+    }
   } else {
     const selectedZone =
       "zone" in parsed.data ? parsed.data.zone : -1;
     let ocgAwaitingPlayerId: string | null = null;
+    let ocgPendingMessageType: number | null = null;
     let ocgEvents: OcgStateEvent[] = [];
     if (!["main1", "main2"].includes(phase)) {
       return NextResponse.json(
@@ -463,6 +616,10 @@ export async function POST(
     }
     const legalOcgActions = getOcgLegalActions(room.id, userId) ?? {};
     const isSpecialSummon = parsed.data.type === "special_summon";
+    const opponentId = room.players.find((entry) => entry.userId !== userId)!.userId;
+    const opponentHasSetSpellTrap = state.players[opponentId].spellTraps.some(
+      (entry) => entry.position.startsWith("face_down")
+    );
     const handIndex = player.hand.indexOf(parsed.data.cardId);
     if (
       (!isSpecialSummon && handIndex < 0) ||
@@ -497,8 +654,13 @@ export async function POST(
           action: parsed.data.type,
           cardId: parsed.data.cardId,
           zone: isSpecialSummon ? undefined : selectedZone,
+          preserveOptionalChain:
+            opponentHasSetSpellTrap && parsed.data.type !== "set_monster",
+          preserveOptionalChainForUserId: opponentId,
         });
         if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
+        ocgAwaitingPlayerId = ocgResult.pendingPlayerId ?? null;
+        ocgPendingMessageType = ocgResult.pendingMessageType ?? null;
         ocgEvents = ocgResult?.events ?? [];
       } catch (error) {
         return NextResponse.json(
@@ -519,7 +681,11 @@ export async function POST(
       const fieldSpell = `${card.type} ${card.race ?? ""}`
         .toLowerCase()
         .includes("field");
-      if ((fieldSpell && selectedZone !== 5) || (!fieldSpell && selectedZone === 5)) {
+      if (
+        parsed.data.type === "activate" &&
+        ((fieldSpell && selectedZone !== 5) ||
+          (!fieldSpell && selectedZone === 5))
+      ) {
         return NextResponse.json(
           {
             error: fieldSpell
@@ -535,11 +701,16 @@ export async function POST(
           userId,
           action: parsed.data.type,
           cardId: parsed.data.cardId,
-          zone: selectedZone,
+          zone:
+            parsed.data.type === "activate" ? selectedZone : undefined,
           fieldSpell,
+          preserveOptionalChain:
+            opponentHasSetSpellTrap && parsed.data.type === "activate",
+          preserveOptionalChainForUserId: opponentId,
         });
         if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
         ocgAwaitingPlayerId = ocgResult?.pendingPlayerId ?? null;
+        ocgPendingMessageType = ocgResult?.pendingMessageType ?? null;
         ocgEvents = ocgResult?.events ?? [];
       } catch (error) {
         return NextResponse.json(
@@ -556,14 +727,26 @@ export async function POST(
 
     const corePhase = applyOcgEvents(state, ocgEvents);
     if (corePhase) phase = corePhase;
-    if (parsed.data.type === "activate") {
-      const opponentId = room.players.find(
-        (entry) => entry.userId !== userId
-      )!.userId;
+    const canOpenChain =
+      opponentHasSetSpellTrap &&
+      (parsed.data.type === "activate" ||
+        parsed.data.type === "summon" ||
+        parsed.data.type === "special_summon");
+    if (
+      canOpenChain &&
+      ocgPendingMessageType === MESSAGE_SELECT_CHAIN &&
+      ocgAwaitingPlayerId === opponentId
+    ) {
       state.chain = {
         links: [{ playerId: userId, cardId: card.id }],
-        awaitingPlayerId: ocgAwaitingPlayerId ?? opponentId,
+        awaitingPlayerId: opponentId,
+        deadlineAt: chainDeadline(),
       };
+      delete state.pendingChainSource;
+    } else if (canOpenChain && isOcgDecision(ocgPendingMessageType)) {
+      state.pendingChainSource = { playerId: userId, cardId: card.id };
+    } else {
+      delete state.pendingChainSource;
     }
   }
 

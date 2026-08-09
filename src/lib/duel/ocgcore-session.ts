@@ -47,6 +47,7 @@ const IDLE_TO_END_PHASE = 7;
 const IDLE_TO_BATTLE_PHASE = 6;
 const BATTLE_TO_MAIN2 = 2;
 const BATTLE_TO_END_PHASE = 3;
+const BATTLE_ATTACK = 1;
 const LOCATION_MZONE = 4;
 const LOCATION_SZONE = 8;
 const LOCATION_FZONE = 256;
@@ -66,6 +67,7 @@ type OcgSession = {
   createdAt: number;
   busy: boolean;
   pendingMessage: Record<string, unknown> | null;
+  selectingBattleTarget: boolean;
 };
 
 export type OcgStateEvent =
@@ -113,7 +115,7 @@ export type OcgPendingDecision =
     }
   | { type: "option"; options: string[] }
   | {
-      type: "cards" | "tributes";
+      type: "cards" | "tributes" | "battle_targets";
       min: number;
       max: number;
       canCancel: boolean;
@@ -168,7 +170,8 @@ async function loadCards(codes: number[]) {
 async function processUntilDecision(
   core: Awaited<ReturnType<typeof loadOcgCore>>,
   session: OcgSession,
-  autoPassOptionalChain = true
+  autoPassOptionalChain = true,
+  preserveOptionalChainForUserId?: string
 ) {
   for (let step = 0; step < 1_000; step += 1) {
     const status = await core.duelProcess(session.handle);
@@ -191,9 +194,12 @@ async function processUntilDecision(
         ) ?? null;
       session.pendingMessage = pending;
       if (
-        autoPassOptionalChain &&
         pending?.type === MESSAGE_SELECT_CHAIN &&
-        pending.forced !== true
+        pending.forced !== true &&
+        (autoPassOptionalChain ||
+          (preserveOptionalChainForUserId !== undefined &&
+            session.players[Number(pending.player)] !==
+              preserveOptionalChainForUserId))
       ) {
         core.duelSetResponse(session.handle, {
           type: RESPONSE_SELECT_CHAIN,
@@ -396,6 +402,7 @@ export async function createOcgDuelSession(input: {
     createdAt: Date.now(),
     busy: false,
     pendingMessage: null,
+    selectingBattleTarget: false,
   };
 
   try {
@@ -470,6 +477,35 @@ export function getOcgLegalActions(matchId: string, userId: string) {
     add("selects", "activate");
   }
   return actions;
+}
+
+export function getOcgAttackableMonsters(matchId: string, userId: string) {
+  const session = sessions.get(matchId);
+  const pending = session ? getPendingMessage(session) : null;
+  if (
+    !session ||
+    !pending ||
+    pending.type !== MESSAGE_SELECT_BATTLECMD ||
+    session.players[Number(pending.player)] !== userId
+  ) {
+    return [];
+  }
+  const controller = session.players.indexOf(userId);
+  const attacks = Array.isArray(pending.attacks)
+    ? (pending.attacks as Array<Record<string, unknown>>)
+    : [];
+  return attacks.flatMap((card) =>
+    typeof card.code === "number" &&
+    card.controller === controller &&
+    card.location === LOCATION_MZONE &&
+    typeof card.sequence === "number"
+      ? [{
+          cardId: card.code,
+          zone: card.sequence,
+          canDirect: card.can_direct === true,
+        }]
+      : []
+  );
 }
 
 function pendingPlaces(
@@ -567,7 +603,11 @@ export function getOcgPendingDecision(
   ) {
     return {
       type:
-        pending.type === MESSAGE_SELECT_TRIBUTE ? "tributes" : "cards",
+        pending.type === MESSAGE_SELECT_TRIBUTE
+          ? "tributes"
+          : session.selectingBattleTarget
+            ? "battle_targets"
+            : "cards",
       min: typeof pending.min === "number" ? pending.min : 1,
       max: typeof pending.max === "number" ? pending.max : 1,
       canCancel: pending.can_cancel === true,
@@ -616,6 +656,7 @@ export async function performOcgDecision(input: {
   position?: number;
   placeIndices?: number[];
   preserveOptionalChain?: boolean;
+  preserveOptionalChainForUserId?: string;
 }) {
   const session = sessions.get(input.matchId);
   if (!session) return null;
@@ -682,6 +723,9 @@ export async function performOcgDecision(input: {
           : RESPONSE_SELECT_CARD,
       indicies,
     };
+    if (pending.type === MESSAGE_SELECT_CARD && session.selectingBattleTarget) {
+      session.selectingBattleTarget = false;
+    }
   } else if (pending.type === MESSAGE_SELECT_POSITION) {
     if (
       !Number.isInteger(input.position) ||
@@ -735,8 +779,65 @@ export async function performOcgDecision(input: {
     await processUntilDecision(
       core,
       session,
-      !input.preserveOptionalChain
+      !input.preserveOptionalChain,
+      input.preserveOptionalChainForUserId
     );
+    return {
+      ...getOcgDuelSessionSnapshot(input.matchId),
+      events: stateEventsSince(session, eventStart),
+    };
+  } finally {
+    session.busy = false;
+  }
+}
+
+export async function performOcgAttack(input: {
+  matchId: string;
+  userId: string;
+  cardId: number;
+  zone: number;
+}) {
+  const session = sessions.get(input.matchId);
+  if (!session) return null;
+  if (session.busy) throw new Error("O motor já está processando outra ação.");
+
+  const pending = getPendingMessage(session);
+  if (
+    !pending ||
+    pending.type !== MESSAGE_SELECT_BATTLECMD ||
+    session.players[Number(pending.player)] !== input.userId
+  ) {
+    throw new Error("O OCGCore não permite declarar um ataque agora.");
+  }
+
+  const attacks = Array.isArray(pending.attacks)
+    ? (pending.attacks as Array<Record<string, unknown>>)
+    : [];
+  const controller = session.players.indexOf(input.userId);
+  const index = attacks.findIndex(
+    (card) =>
+      card.code === input.cardId &&
+      card.controller === controller &&
+      card.location === LOCATION_MZONE &&
+      card.sequence === input.zone
+  );
+  if (index < 0) {
+    throw new Error("Este monstro não pode atacar agora.");
+  }
+
+  session.busy = true;
+  session.selectingBattleTarget = false;
+  try {
+    const core = await loadOcgCore();
+    const eventStart = session.messages.length;
+    core.duelSetResponse(session.handle, {
+      type: RESPONSE_SELECT_BATTLECMD,
+      action: BATTLE_ATTACK,
+      index,
+    });
+    await processUntilDecision(core, session);
+    session.selectingBattleTarget =
+      getPendingMessage(session)?.type === MESSAGE_SELECT_CARD;
     return {
       ...getOcgDuelSessionSnapshot(input.matchId),
       events: stateEventsSince(session, eventStart),
@@ -752,6 +853,8 @@ export async function performOcgMonsterAction(input: {
   action: "summon" | "special_summon" | "set_monster";
   cardId: number;
   zone?: number;
+  preserveOptionalChain?: boolean;
+  preserveOptionalChainForUserId?: string;
 }) {
   const session = sessions.get(input.matchId);
   if (!session) return null;
@@ -791,7 +894,12 @@ export async function performOcgMonsterAction(input: {
             : IDLE_MONSTER_SET,
       index,
     });
-    await processUntilDecision(core, session);
+    await processUntilDecision(
+      core,
+      session,
+      !input.preserveOptionalChain,
+      input.preserveOptionalChainForUserId
+    );
 
     const placeRequest = getPendingMessage(session);
     if (
@@ -812,7 +920,12 @@ export async function performOcgMonsterAction(input: {
           },
         ],
       });
-      await processUntilDecision(core, session);
+      await processUntilDecision(
+        core,
+        session,
+        !input.preserveOptionalChain,
+        input.preserveOptionalChainForUserId
+      );
     }
 
     return {
@@ -829,8 +942,10 @@ export async function performOcgSpellAction(input: {
   userId: string;
   action: "set_spell_trap" | "activate";
   cardId: number;
-  zone: number;
+  zone?: number;
   fieldSpell: boolean;
+  preserveOptionalChain?: boolean;
+  preserveOptionalChainForUserId?: string;
 }) {
   const session = sessions.get(input.matchId);
   if (!session) return null;
@@ -859,26 +974,85 @@ export async function performOcgSpellAction(input: {
     await processUntilDecision(
       core,
       session,
-      input.action !== "activate"
+      input.action !== "activate" || !input.preserveOptionalChain,
+      input.preserveOptionalChainForUserId
     );
     const placeRequest = getPendingMessage(session);
-    if (placeRequest?.type === MESSAGE_SELECT_PLACE) {
+    if (
+      placeRequest?.type === MESSAGE_SELECT_PLACE &&
+      Number.isInteger(input.zone)
+    ) {
+      const allowedPlace = pendingPlaces(session, placeRequest).find(
+        (place) =>
+          place.controllerId === input.userId &&
+          place.location ===
+            (input.fieldSpell ? LOCATION_FZONE : LOCATION_SZONE) &&
+          place.sequence === (input.fieldSpell ? 0 : input.zone)
+      );
+      if (!allowedPlace) {
+        throw new Error("Escolha uma das zonas permitidas pelo OCGCore.");
+      }
       core.duelSetResponse(session.handle, {
         type: RESPONSE_SELECT_PLACE,
         places: [
           {
             player: Number(placeRequest.player),
-            location: input.fieldSpell ? LOCATION_FZONE : LOCATION_SZONE,
-            sequence: input.fieldSpell ? 0 : input.zone,
+            location: allowedPlace.location,
+            sequence: allowedPlace.sequence,
           },
         ],
       });
       await processUntilDecision(
         core,
         session,
-        input.action !== "activate"
+        input.action !== "activate" || !input.preserveOptionalChain,
+        input.preserveOptionalChainForUserId
       );
     }
+    return {
+      ...getOcgDuelSessionSnapshot(input.matchId),
+      events: stateEventsSince(session, eventStart),
+    };
+  } finally {
+    session.busy = false;
+  }
+}
+
+export async function performOcgChainActivation(input: {
+  matchId: string;
+  userId: string;
+  cardId: number;
+}) {
+  const session = sessions.get(input.matchId);
+  if (!session) return null;
+  if (session.busy) throw new Error("O motor já está processando outra ação.");
+
+  const pending = getPendingMessage(session);
+  if (
+    !pending ||
+    pending.type !== MESSAGE_SELECT_CHAIN ||
+    session.players[Number(pending.player)] !== input.userId
+  ) {
+    throw new Error("O OCGCore não está aguardando uma resposta sua.");
+  }
+
+  const candidates = Array.isArray(pending.selects)
+    ? (pending.selects as Array<Record<string, unknown>>)
+    : [];
+  const index = candidates.findIndex((candidate) => candidate.code === input.cardId);
+  if (index < 0) {
+    throw new Error("Esta carta não pode ser ativada nesta corrente.");
+  }
+
+  session.busy = true;
+  try {
+    const core = await loadOcgCore();
+    const eventStart = session.messages.length;
+    core.duelSetResponse(session.handle, {
+      type: RESPONSE_SELECT_CHAIN,
+      index,
+    });
+    await processUntilDecision(core, session, false);
     return {
       ...getOcgDuelSessionSnapshot(input.matchId),
       events: stateEventsSince(session, eventStart),

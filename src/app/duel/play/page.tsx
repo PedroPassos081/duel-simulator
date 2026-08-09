@@ -62,6 +62,11 @@ type RoomGameState = {
   currentTurn: number;
   currentPhase: string;
   legalActions: Record<string, DuelCardAction[]>;
+  attackableMonsters: Array<{
+    cardId: number;
+    zone: number;
+    canDirect: boolean;
+  }>;
   specialSummonCandidates: Card[];
   decision?: OcgDecision | null;
   chain?: {
@@ -69,6 +74,8 @@ type RoomGameState = {
     linkCount: number;
     awaitingYou: boolean;
     controllerId: string;
+    deadlineAt?: string | null;
+    canForceClose: boolean;
   } | null;
 };
 
@@ -81,7 +88,7 @@ type OcgDecision =
     }
   | { type: "option"; options: string[] }
   | {
-      type: "cards" | "tributes";
+      type: "cards" | "tributes" | "battle_targets";
       min: number;
       max: number;
       canCancel: boolean;
@@ -116,7 +123,8 @@ type DuelCardAction =
   | "set_monster"
   | "set_spell_trap"
   | "activate"
-  | "special_summon";
+  | "special_summon"
+  | "attack";
 
 type FieldCardView = {
   card?: Card;
@@ -126,7 +134,7 @@ type FieldCardView = {
 };
 
 type PendingPlacement = {
-  action: Exclude<DuelCardAction, "special_summon">;
+  action: Exclude<DuelCardAction, "special_summon" | "attack">;
   cardId: number;
   kind: "monster" | "spell" | "field";
 };
@@ -199,6 +207,10 @@ function ZoneRow({
   selectable = false,
   selectableZones,
   onZoneSelect,
+  attackableZones,
+  targetableZones,
+  onAttack,
+  onTarget,
 }: {
   opponent?: boolean;
   kind: "monster" | "spell";
@@ -207,6 +219,10 @@ function ZoneRow({
   selectable?: boolean;
   selectableZones?: number[];
   onZoneSelect?: (zone: number) => void;
+  attackableZones?: number[];
+  targetableZones?: number[];
+  onAttack?: (cardId: number, zone: number) => void;
+  onTarget?: (zone: number) => void;
 }) {
   const pink = kind === "spell";
   return (
@@ -220,11 +236,23 @@ function ZoneRow({
         const zoneIsSelectable =
           selectable &&
           (selectableZones === undefined || selectableZones.includes(index));
+        const attackable = Boolean(
+          card && attackableZones?.includes(index)
+        );
+        const targetable = Boolean(targetableZones?.includes(index));
         return fieldCard ? (
           <button
             key={`${card?.id ?? "hidden"}-${index}`}
             type="button"
-            onClick={() => card && onSelect?.(card)}
+            onClick={() => {
+              if (targetable) {
+                onTarget?.(index);
+              } else if (attackable && card) {
+                onAttack?.(card.id, index);
+              } else if (card) {
+                onSelect?.(card);
+              }
+            }}
             className={`group relative min-h-0 justify-self-center overflow-hidden rounded-[3px] border bg-black/30 shadow-lg transition duration-300 hover:-translate-y-1 ${
               fieldCard.faceDown
                 ? "border-fuchsia-400/55 hover:border-fuchsia-300 hover:shadow-[0_0_22px_rgba(217,70,239,0.38)]"
@@ -233,9 +261,19 @@ function ZoneRow({
               defensePosition
                 ? "h-[100px] aspect-[0.72] rotate-90"
                 : "h-[clamp(96px,14.5vh,142px)] aspect-[0.72]"
+            } ${
+              attackable
+                ? "animate-pulse ring-2 ring-red-400 shadow-[0_0_26px_rgba(248,113,113,0.55)]"
+                : targetable
+                  ? "animate-pulse ring-2 ring-edison-gold shadow-[0_0_28px_rgba(208,168,89,0.65)]"
+                  : ""
             }`}
             title={
-              fieldCard.faceDown && card && !opponent
+              targetable
+                ? "Clique para escolher este monstro como alvo do ataque"
+                : attackable
+                  ? "Clique para atacar com este monstro"
+                  : fieldCard.faceDown && card && !opponent
                 ? `Carta setada: ${card.name}`
                 : card
                   ? `Ver ${card.name}`
@@ -275,6 +313,11 @@ function ZoneRow({
                 className="object-cover"
                 unoptimized
               />
+            )}
+            {(attackable || targetable) && (
+              <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-black/80 px-1 py-1 text-[7px] font-black uppercase tracking-wider text-white backdrop-blur-sm">
+                {targetable ? "Alvo" : "Atacar"}
+              </span>
             )}
           </button>
         ) : (
@@ -776,6 +819,7 @@ export default function DuelPlayPage() {
   const [pendingPlacement, setPendingPlacement] = useState<PendingPlacement>();
   const [selectedDecisionIndices, setSelectedDecisionIndices] = useState<number[]>([]);
   const [specialSummonOpen, setSpecialSummonOpen] = useState(false);
+  const [chainSecondsLeft, setChainSecondsLeft] = useState(20);
 
   useEffect(() => {
     setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
@@ -847,8 +891,18 @@ export default function DuelPlayPage() {
 
     return { kind, places };
   }, [gameState]);
+  const battleTargetDecision =
+    gameState?.decision?.type === "battle_targets"
+      ? gameState.decision
+      : undefined;
+  const positionDecision =
+    gameState?.decision?.type === "position"
+      ? gameState.decision
+      : undefined;
   const decisionSignature = gameState?.decision
-    ? gameState.decision.type === "cards" || gameState.decision.type === "tributes"
+    ? gameState.decision.type === "cards" ||
+      gameState.decision.type === "tributes" ||
+      gameState.decision.type === "battle_targets"
       ? `${gameState.decision.type}:${gameState.decision.candidates
           .map((candidate) => candidate.index)
           .join(",")}:${gameState.decision.min}:${gameState.decision.max}`
@@ -858,6 +912,22 @@ export default function DuelPlayPage() {
   useEffect(() => {
     setSelectedDecisionIndices([]);
   }, [decisionSignature]);
+
+  useEffect(() => {
+    function updateChainCountdown() {
+      const deadline = gameState?.chain?.deadlineAt;
+      if (!deadline) {
+        setChainSecondsLeft(20);
+        return;
+      }
+      setChainSecondsLeft(
+        Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000))
+      );
+    }
+    updateChainCountdown();
+    const timer = window.setInterval(updateChainCountdown, 250);
+    return () => window.clearInterval(timer);
+  }, [gameState?.chain?.deadlineAt]);
 
   useEffect(() => {
     setPlayerDeckCount(
@@ -890,7 +960,8 @@ export default function DuelPlayPage() {
           type: "select_phase";
           phase: "standby" | "main1" | "battle" | "main2";
         }
-      | { type: "pass_chain" }
+      | { type: "pass_chain" | "force_pass_chain" }
+      | { type: "activate_chain"; cardId: number }
       | {
           type: "ocg_decision";
           yes?: boolean;
@@ -900,11 +971,13 @@ export default function DuelPlayPage() {
           placeIndices?: number[];
         }
       | {
-          type: "summon" | "set_monster" | "set_spell_trap" | "activate";
+          type: "summon" | "set_monster" | "activate";
           cardId: number;
           zone: number;
         }
+      | { type: "set_spell_trap"; cardId: number }
       | { type: "special_summon"; cardId: number }
+      | { type: "attack"; cardId: number; zone: number }
   ) {
     if (!roomId || acting) return;
     setActing(true);
@@ -926,10 +999,15 @@ export default function DuelPlayPage() {
   }
 
   function handleCardAction(action: DuelCardAction, cardId: number) {
-    if (action === "special_summon") {
-      sendAction({ type: "special_summon", cardId });
+    if (action === "activate" && gameState?.chain?.awaitingYou) {
+      sendAction({ type: "activate_chain", cardId });
       return;
     }
+    if (action === "special_summon" || action === "set_spell_trap") {
+      sendAction({ type: action, cardId });
+      return;
+    }
+    if (action === "attack") return;
     const card = hand.find((entry) => entry.id === cardId);
     const fieldSpell = `${card?.type ?? ""} ${card?.race ?? ""}`
       .toLowerCase()
@@ -962,6 +1040,18 @@ export default function DuelPlayPage() {
     );
     if (!place) return;
     sendAction({ type: "ocg_decision", placeIndices: [place.index] });
+  }
+
+  function declareAttack(cardId: number, zone: number) {
+    sendAction({ type: "attack", cardId, zone });
+  }
+
+  function chooseBattleTarget(zone: number) {
+    const target = battleTargetDecision?.candidates.find(
+      (candidate) => candidate.location === 4 && candidate.sequence === zone
+    );
+    if (!target) return;
+    sendAction({ type: "ocg_decision", cardIndices: [target.index] });
   }
 
   function selectPhase(phase: string) {
@@ -1050,6 +1140,7 @@ export default function DuelPlayPage() {
 
       {gameState?.decision &&
         gameState.decision.type !== "place" &&
+        gameState.decision.type !== "battle_targets" &&
         !inlinePlaceDecision && (
         <div className="absolute inset-0 z-[95] flex items-center justify-center bg-black/65 p-4">
           <div className="w-full max-w-2xl rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
@@ -1202,7 +1293,7 @@ export default function DuelPlayPage() {
               </>
             )}
 
-            {gameState.decision.type === "position" && (
+            {positionDecision && (
               <>
                 <h2 className="mt-2 text-xl font-black">
                   Escolha como invocar
@@ -1211,7 +1302,7 @@ export default function DuelPlayPage() {
                   Clique na posição visual desejada para continuar.
                 </p>
                 <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  {gameState.decision.positions.map((position) => {
+                  {positionDecision.positions.map((position) => {
                     const defensePosition = position === 4 || position === 8;
                     const faceDownPosition = position === 2 || position === 8;
                     const positionLabel = defensePosition ? "Defesa" : "Ataque";
@@ -1240,10 +1331,10 @@ export default function DuelPlayPage() {
                                 className="object-cover"
                                 unoptimized
                               />
-                            ) : gameState.decision.card?.imageUrl ? (
+                            ) : positionDecision.card?.imageUrl ? (
                               <Image
-                                src={gameState.decision.card.imageUrl}
-                                alt={`${gameState.decision.card.name} em posição de ${positionLabel.toLowerCase()}`}
+                                src={positionDecision.card.imageUrl}
+                                alt={`${positionDecision.card.name} em posição de ${positionLabel.toLowerCase()}`}
                                 fill
                                 sizes="112px"
                                 className="object-cover"
@@ -1251,7 +1342,7 @@ export default function DuelPlayPage() {
                               />
                             ) : (
                               <div className="flex h-full items-center justify-center bg-white/5 px-2 text-center text-[10px] font-bold text-white/55">
-                                {gameState.decision.card?.name ?? "Monstro"}
+                                {positionDecision.card?.name ?? "Monstro"}
                               </div>
                             )}
                           </div>
@@ -1278,7 +1369,27 @@ export default function DuelPlayPage() {
       {inlinePlaceDecision && (
         <div className="pointer-events-none absolute inset-x-0 top-4 z-[80] flex justify-center">
           <div className="rounded-full border border-edison-gold/45 bg-[#121019]/95 px-5 py-2 text-xs font-black text-edison-gold shadow-2xl backdrop-blur">
-            Escolha uma das zonas iluminadas para concluir a invocação
+            Escolha uma das zonas iluminadas para concluir a ação
+          </div>
+        </div>
+      )}
+
+      {battleTargetDecision && (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-[80] flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-red-400/45 bg-[#121019]/95 px-5 py-2 text-xs font-black text-red-200 shadow-2xl backdrop-blur">
+            <span>Escolha o monstro que será atacado</span>
+            {battleTargetDecision.canCancel && (
+              <button
+                type="button"
+                onClick={() =>
+                  sendAction({ type: "ocg_decision", cardIndices: null })
+                }
+                disabled={acting}
+                className="rounded-full bg-red-600 px-3 py-1 text-[10px] text-white transition hover:bg-red-500 disabled:opacity-40"
+              >
+                Ataque direto
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1297,6 +1408,11 @@ export default function DuelPlayPage() {
                 ? "Deseja responder à ativação?"
                 : "Aguardando a resposta do oponente."}
             </p>
+            {gameState.chain.deadlineAt && (
+              <div className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-edison-gold/45 bg-edison-gold/10 font-mono text-xl font-black text-edison-gold">
+                {chainSecondsLeft}
+              </div>
+            )}
             {gameState.chain.awaitingYou && (
               <button
                 type="button"
@@ -1307,6 +1423,17 @@ export default function DuelPlayPage() {
                 Sem resposta
               </button>
             )}
+            {!gameState.chain.awaitingYou &&
+              (gameState.chain.canForceClose || chainSecondsLeft === 0) && (
+                <button
+                  type="button"
+                  onClick={() => sendAction({ type: "force_pass_chain" })}
+                  disabled={acting}
+                  className="mt-4 rounded-lg bg-red-600 px-5 py-2 text-xs font-black text-white transition hover:bg-red-500 disabled:opacity-40"
+                >
+                  Finalizar chain
+                </button>
+              )}
           </div>
         </div>
       )}
@@ -1368,6 +1495,10 @@ export default function DuelPlayPage() {
                   kind="monster"
                   cards={gameState?.opponentMonsters}
                   onSelect={setSelectedCard}
+                  targetableZones={battleTargetDecision?.candidates
+                    .filter((candidate) => candidate.location === 4)
+                    .map((candidate) => candidate.sequence)}
+                  onTarget={chooseBattleTarget}
                 />
               </div>
               <div className="flex flex-col items-center gap-2">
@@ -1453,6 +1584,10 @@ export default function DuelPlayPage() {
                     kind="monster"
                     cards={fieldMonsters}
                     onSelect={setSelectedCard}
+                    attackableZones={gameState?.attackableMonsters.map(
+                      (attacker) => attacker.zone
+                    )}
+                    onAttack={declareAttack}
                     selectable={
                       pendingPlacement?.kind === "monster" ||
                       inlinePlaceDecision?.kind === "monster"
@@ -1526,6 +1661,7 @@ export default function DuelPlayPage() {
                                   set_spell_trap: "Set",
                                   activate: "Ativar",
                                   special_summon: "Special Summon",
+                                  attack: "Atacar",
                                 }[action]}
                               </button>
                             ))}

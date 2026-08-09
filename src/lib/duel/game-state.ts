@@ -26,6 +26,7 @@ export type DuelChainState = {
     cardId: number;
   }[];
   awaitingPlayerId: string;
+  deadlineAt?: string;
 };
 
 export type DuelGameState = {
@@ -33,6 +34,10 @@ export type DuelGameState = {
   turnPlayerId: string;
   turn: number;
   chain?: DuelChainState;
+  pendingChainSource?: {
+    playerId: string;
+    cardId: number;
+  };
   winnerId?: string;
   winReason?: number;
 };

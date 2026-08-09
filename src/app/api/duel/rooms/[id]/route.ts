@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { isDuelGameState } from "@/lib/duel/game-state";
 import {
   getOcgDuelSessionSnapshot,
+  getOcgAttackableMonsters,
   getOcgLegalActions,
   getOcgPendingDecision,
 } from "@/lib/duel/ocgcore-session";
@@ -113,12 +114,15 @@ export async function GET(
     : undefined;
   const pendingDecision = getOcgPendingDecision(room.id, userId);
   const ocgLegalActions = getOcgLegalActions(room.id, userId);
+  const attackableMonsters = getOcgAttackableMonsters(room.id, userId);
   const specialSummonCardIds = Object.entries(ocgLegalActions ?? {})
     .filter(([, actions]) => actions.includes("special_summon"))
     .map(([cardId]) => Number(cardId))
     .filter(Number.isInteger);
   const decisionCardIds = pendingDecision
-    ? pendingDecision.type === "cards" || pendingDecision.type === "tributes"
+    ? pendingDecision.type === "cards" ||
+      pendingDecision.type === "tributes" ||
+      pendingDecision.type === "battle_targets"
       ? pendingDecision.candidates.map((candidate) => candidate.cardId)
       : "cardId" in pendingDecision
         ? typeof pendingDecision.cardId === "number"
@@ -229,12 +233,14 @@ export async function GET(
             currentTurn: storedState.turn,
             currentPhase: room.currentPhase,
             legalActions: ocgLegalActions ?? legalActions,
+            attackableMonsters,
             specialSummonCandidates: specialSummonCardIds
               .map((cardId) => cardById.get(cardId))
               .filter(Boolean),
             decision: pendingDecision
               ? pendingDecision.type === "cards" ||
-                pendingDecision.type === "tributes"
+                pendingDecision.type === "tributes" ||
+                pendingDecision.type === "battle_targets"
                 ? {
                     ...pendingDecision,
                     candidates: pendingDecision.candidates.map((candidate) => ({
@@ -263,6 +269,11 @@ export async function GET(
                     storedState.chain.links[
                       storedState.chain.links.length - 1
                     ].playerId,
+                  deadlineAt: storedState.chain.deadlineAt ?? null,
+                  canForceClose:
+                    storedState.chain.awaitingPlayerId !== userId &&
+                    Boolean(storedState.chain.deadlineAt) &&
+                    new Date(storedState.chain.deadlineAt!).getTime() <= Date.now(),
                 }
               : null,
           }
