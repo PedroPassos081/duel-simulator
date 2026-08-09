@@ -220,15 +220,48 @@ function ZoneRow({
         return fieldCard ? (
           <button
             key={`${card?.id ?? "hidden"}-${index}`}
+            type="button"
             onClick={() => card && onSelect?.(card)}
-            className={`group relative min-h-0 justify-self-center overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 shadow-lg transition hover:-translate-y-1 hover:border-edison-gold hover:brightness-110 ${
+            className={`group relative min-h-0 justify-self-center overflow-hidden rounded-[3px] border bg-black/30 shadow-lg transition duration-300 hover:-translate-y-1 ${
+              fieldCard.faceDown
+                ? "border-fuchsia-400/55 hover:border-fuchsia-300 hover:shadow-[0_0_22px_rgba(217,70,239,0.38)]"
+                : "border-edison-gold/70 hover:border-edison-gold hover:brightness-110"
+            } ${
               defensePosition
                 ? "h-[100px] aspect-[0.72] rotate-90"
                 : "h-[clamp(96px,14.5vh,142px)] aspect-[0.72]"
             }`}
-            title={card ? `Ver ${card.name}` : "Carta virada para baixo"}
+            title={
+              fieldCard.faceDown && card && !opponent
+                ? `Carta setada: ${card.name}`
+                : card
+                  ? `Ver ${card.name}`
+                  : "Carta virada para baixo"
+            }
           >
-            {fieldCard.faceDown || !card?.imageUrl ? (
+            {fieldCard.faceDown ? (
+              <>
+                <div className="absolute inset-0 transition duration-300 group-hover:scale-[1.03] group-hover:opacity-25">
+                  <CardBack />
+                </div>
+                {!opponent && card?.imageUrl && (
+                  <>
+                    <Image
+                      src={card.imageUrl}
+                      alt={`Prévia de ${card.name}`}
+                      fill
+                      sizes="100px"
+                      className="scale-[1.04] object-cover opacity-0 brightness-[0.38] saturate-[0.72] transition duration-300 ease-out group-hover:scale-100 group-hover:opacity-90"
+                      unoptimized
+                    />
+                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_35%,rgba(7,4,12,0.62)_100%)] opacity-0 transition duration-300 group-hover:opacity-100" />
+                    <div className="pointer-events-none absolute inset-x-1 bottom-1 translate-y-2 rounded bg-black/70 px-1 py-1 text-center text-[7px] font-black uppercase tracking-[0.16em] text-fuchsia-100 opacity-0 backdrop-blur-sm transition duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                      Carta setada
+                    </div>
+                  </>
+                )}
+              </>
+            ) : !card?.imageUrl ? (
               <CardBack />
             ) : (
               <Image
