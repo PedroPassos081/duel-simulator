@@ -5,6 +5,7 @@ import { isDuelGameState } from "@/lib/duel/game-state";
 import {
   getOcgDuelSessionSnapshot,
   getOcgLegalActions,
+  getOcgPendingDecision,
 } from "@/lib/duel/ocgcore-session";
 
 export const runtime = "nodejs";
@@ -110,6 +111,16 @@ export async function GET(
   const opponentState = opponentPlayer
     ? storedState?.players[opponentPlayer.userId]
     : undefined;
+  const pendingDecision = getOcgPendingDecision(room.id, userId);
+  const decisionCardIds = pendingDecision
+    ? pendingDecision.type === "cards" || pendingDecision.type === "tributes"
+      ? pendingDecision.candidates.map((candidate) => candidate.cardId)
+      : "cardId" in pendingDecision
+        ? typeof pendingDecision.cardId === "number"
+          ? [pendingDecision.cardId]
+          : []
+        : []
+    : [];
   const visibleCardIds = ownState
     ? [
         ...ownState.hand,
@@ -121,6 +132,7 @@ export async function GET(
         ...(opponentState?.spellTraps
           .filter((entry) => !entry.position.startsWith("face_down"))
           .map((entry) => entry.cardId) ?? []),
+        ...decisionCardIds,
       ]
     : [];
   const visibleCards = ownState
@@ -211,6 +223,23 @@ export async function GET(
             currentTurn: storedState.turn,
             currentPhase: room.currentPhase,
             legalActions: ocgLegalActions ?? legalActions,
+            decision: pendingDecision
+              ? pendingDecision.type === "cards" ||
+                pendingDecision.type === "tributes"
+                ? {
+                    ...pendingDecision,
+                    candidates: pendingDecision.candidates.map((candidate) => ({
+                      ...candidate,
+                      card: cardById.get(candidate.cardId) ?? null,
+                    })),
+                  }
+                : pendingDecision.type === "position"
+                  ? {
+                      ...pendingDecision,
+                      card: cardById.get(pendingDecision.cardId) ?? null,
+                    }
+                  : pendingDecision
+              : null,
             chain: storedState.chain
               ? {
                   card:
