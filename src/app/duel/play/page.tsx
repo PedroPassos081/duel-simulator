@@ -27,7 +27,7 @@ type EquippedDeck = {
 
 type RoomState = {
   id: string;
-  status: "waiting" | "rps" | "choosing" | "active";
+  status: "waiting" | "rps" | "choosing" | "active" | "finished";
   meId: string;
   rpsRound: number;
   rpsDeadline?: string | null;
@@ -53,6 +53,10 @@ type RoomGameState = {
   opponentHandCount: number;
   opponentDeckCount: number;
   opponentExtraCount: number;
+  ownLifePoints: number;
+  opponentLifePoints: number;
+  winnerId?: string | null;
+  youWon?: boolean | null;
   isYourTurn: boolean;
   currentTurn: number;
   currentPhase: string;
@@ -451,7 +455,14 @@ function CardInspector({ card }: { card?: Card }) {
   );
 }
 
-function DuelistHud({ opponent = false }: { opponent?: boolean }) {
+function DuelistHud({
+  opponent = false,
+  lifePoints = 8_000,
+}: {
+  opponent?: boolean;
+  lifePoints?: number;
+}) {
+  const lifeRatio = Math.max(0, Math.min(100, (lifePoints / 8_000) * 100));
   return (
     <section
       className={`flex min-w-56 items-center gap-3 rounded-xl border px-3 py-2 backdrop-blur-md ${
@@ -476,12 +487,15 @@ function DuelistHud({ opponent = false }: { opponent?: boolean }) {
         <div className="mt-1 flex items-center gap-2">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/40">
             <div
-              className={`h-full w-full ${
+              style={{ width: `${lifeRatio}%` }}
+              className={`h-full transition-[width] duration-500 ${
                 opponent ? "bg-red-500" : "bg-sky-500"
               }`}
             />
           </div>
-          <p className="font-mono text-sm font-black">8000 LP</p>
+          <p className="font-mono text-sm font-black">
+            {lifePoints.toLocaleString("pt-BR")} LP
+          </p>
         </div>
       </div>
     </section>
@@ -543,7 +557,7 @@ function PreDuelGate({
     return () => window.clearInterval(timer);
   }, [room?.rpsDeadline]);
 
-  if (room?.status === "active") return null;
+  if (room?.status === "active" || room?.status === "finished") return null;
   const me = room?.players.find((player) => player.id === room.meId);
   const winner = room?.rpsWinnerId === room?.meId;
 
@@ -868,6 +882,22 @@ export default function DuelPlayPage() {
         </div>
       )}
 
+      {gameState?.winnerId && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70">
+          <div className="w-full max-w-sm rounded-2xl border border-edison-gold/40 bg-[#121019] p-8 text-center shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-edison-gold">
+              Duelo encerrado
+            </p>
+            <h2 className="mt-3 text-3xl font-black">
+              {gameState.youWon ? "Vitória" : "Derrota"}
+            </h2>
+            <p className="mt-2 text-sm text-white/65">
+              O OCGCore confirmou o resultado da partida.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="relative z-10 mx-auto grid h-screen w-full max-w-[1600px] grid-cols-[clamp(300px,25vw,360px)_minmax(0,1fr)] items-center gap-2 overflow-hidden p-2">
         <CardInspector card={selectedCard} />
 
@@ -876,10 +906,13 @@ export default function DuelPlayPage() {
 
           <div className="relative flex min-h-0 flex-1 flex-col justify-center gap-1">
             <div className="absolute left-1 top-1 z-10">
-              <DuelistHud />
+              <DuelistHud lifePoints={gameState?.ownLifePoints} />
             </div>
             <div className="absolute right-1 top-1 z-10">
-              <DuelistHud opponent />
+              <DuelistHud
+                opponent
+                lifePoints={gameState?.opponentLifePoints}
+              />
             </div>
             <div className="mb-2 flex min-h-[58px] items-start justify-center gap-1 pt-1">
               {Array.from(
