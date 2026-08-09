@@ -19,6 +19,9 @@ const MESSAGE_SELECT_IDLECMD = 11;
 const MESSAGE_SELECT_BATTLECMD = 10;
 const MESSAGE_SELECT_CHAIN = 16;
 const MESSAGE_SELECT_PLACE = 18;
+const MESSAGE_WIN = 5;
+const MESSAGE_NEW_TURN = 40;
+const MESSAGE_NEW_PHASE = 41;
 const RESPONSE_SELECT_IDLECMD = 1;
 const RESPONSE_SELECT_BATTLECMD = 0;
 const RESPONSE_SELECT_CHAIN = 8;
@@ -35,7 +38,11 @@ const LOCATION_MZONE = 4;
 const LOCATION_SZONE = 8;
 const LOCATION_FZONE = 256;
 const MESSAGE_MOVE = 50;
+const MESSAGE_POS_CHANGE = 53;
 const MESSAGE_DRAW = 90;
+const MESSAGE_DAMAGE = 91;
+const MESSAGE_RECOVER = 92;
+const MESSAGE_LP_UPDATE = 94;
 
 type OcgSession = {
   handle: unknown;
@@ -45,6 +52,7 @@ type OcgSession = {
   errors: string[];
   createdAt: number;
   busy: boolean;
+  pendingMessage: Record<string, unknown> | null;
 };
 
 export type OcgStateEvent =
@@ -64,7 +72,24 @@ export type OcgStateEvent =
         sequence: number;
         position: number;
       };
-    };
+    }
+  | {
+      type: "position";
+      playerId: string;
+      cardId: number;
+      location: number;
+      sequence: number;
+      position: number;
+    }
+  | {
+      type: "life_points";
+      playerId: string;
+      value: number;
+      absolute: boolean;
+    }
+  | { type: "turn"; playerId: string }
+  | { type: "phase"; phase: number }
+  | { type: "win"; playerId: string; reason: number };
 
 declare global {
   // eslint-disable-next-line no-var
@@ -101,13 +126,24 @@ async function processUntilDecision(
 ) {
   for (let step = 0; step < 1_000; step += 1) {
     const status = await core.duelProcess(session.handle);
-    session.messages.push(...core.duelGetMessage(session.handle));
+    const messages = core.duelGetMessage(session.handle);
+    session.messages.push(...messages);
     if (status === PROCESS_END) {
       session.status = "ended";
+      session.pendingMessage = null;
       return;
     }
     if (status === PROCESS_WAITING) {
-      const pending = getPendingMessage(session);
+      const pending = [...messages]
+        .reverse()
+        .find(
+          (message) =>
+            typeof message.player === "number" &&
+            typeof message.type === "number" &&
+            message.type >= 10 &&
+            message.type <= 26
+        ) ?? null;
+      session.pendingMessage = pending;
       if (
         autoPassOptionalChain &&
         pending?.type === MESSAGE_SELECT_CHAIN &&
@@ -127,15 +163,7 @@ async function processUntilDecision(
 }
 
 function getPendingMessage(session: OcgSession) {
-  return [...session.messages]
-    .reverse()
-    .find(
-      (message) =>
-        typeof message.player === "number" &&
-        typeof message.type === "number" &&
-        message.type >= 10 &&
-        message.type <= 26
-    );
+  return session.pendingMessage;
 }
 
 function cardIndex(
@@ -200,6 +228,64 @@ function stateEventsSince(session: OcgSession, start: number): OcgStateEvent[] {
         });
       }
     }
+    if (
+      message.type === MESSAGE_POS_CHANGE &&
+      typeof message.code === "number" &&
+      typeof message.controller === "number" &&
+      typeof message.location === "number" &&
+      typeof message.sequence === "number" &&
+      typeof message.position === "number"
+    ) {
+      events.push({
+        type: "position",
+        playerId: session.players[message.controller],
+        cardId: message.code,
+        location: message.location,
+        sequence: message.sequence,
+        position: message.position,
+      });
+    }
+    if (
+      (message.type === MESSAGE_DAMAGE ||
+        message.type === MESSAGE_RECOVER ||
+        message.type === MESSAGE_LP_UPDATE) &&
+      typeof message.player === "number"
+    ) {
+      const playerId = session.players[message.player];
+      if (message.type === MESSAGE_LP_UPDATE && typeof message.lp === "number") {
+        events.push({
+          type: "life_points",
+          playerId,
+          value: message.lp,
+          absolute: true,
+        });
+      } else if (typeof message.amount === "number") {
+        events.push({
+          type: "life_points",
+          playerId,
+          value:
+            message.type === MESSAGE_DAMAGE ? -message.amount : message.amount,
+          absolute: false,
+        });
+      }
+    }
+    if (message.type === MESSAGE_NEW_TURN && typeof message.player === "number") {
+      events.push({ type: "turn", playerId: session.players[message.player] });
+    }
+    if (message.type === MESSAGE_NEW_PHASE && typeof message.phase === "number") {
+      events.push({ type: "phase", phase: message.phase });
+    }
+    if (
+      message.type === MESSAGE_WIN &&
+      typeof message.player === "number" &&
+      typeof message.reason === "number"
+    ) {
+      events.push({
+        type: "win",
+        playerId: session.players[message.player],
+        reason: message.reason,
+      });
+    }
   }
   return events;
 }
@@ -263,6 +349,7 @@ export async function createOcgDuelSession(input: {
     errors,
     createdAt: Date.now(),
     busy: false,
+    pendingMessage: null,
   };
 
   try {
@@ -307,11 +394,7 @@ export function getOcgLegalActions(matchId: string, userId: string) {
   const session = sessions.get(matchId);
   if (!session) return null;
   const pending = getPendingMessage(session);
-  if (
-    !pending ||
-    pending.type !== MESSAGE_SELECT_IDLECMD ||
-    session.players[Number(pending.player)] !== userId
-  ) {
+  if (!pending || session.players[Number(pending.player)] !== userId) {
     return {};
   }
 
@@ -327,10 +410,18 @@ export function getOcgLegalActions(matchId: string, userId: string) {
       if (!actions[key].includes(action)) actions[key].push(action);
     }
   };
-  add("summons", "summon");
-  add("monster_sets", "set_monster");
-  add("spell_sets", "set_spell_trap");
-  add("activates", "activate");
+  if (pending.type === MESSAGE_SELECT_IDLECMD) {
+    add("summons", "summon");
+    add("monster_sets", "set_monster");
+    add("spell_sets", "set_spell_trap");
+    add("activates", "activate");
+    add("pos_changes", "change_position");
+  } else if (pending.type === MESSAGE_SELECT_BATTLECMD) {
+    add("attacks", "attack");
+    add("chains", "activate");
+  } else if (pending.type === MESSAGE_SELECT_CHAIN) {
+    add("selects", "activate");
+  }
   return actions;
 }
 
@@ -363,6 +454,7 @@ export async function performOcgMonsterAction(input: {
   session.busy = true;
   try {
     const core = await loadOcgCore();
+    const eventStart = session.messages.length;
     core.duelSetResponse(session.handle, {
       type: RESPONSE_SELECT_IDLECMD,
       action: input.action === "summon" ? IDLE_SUMMON : IDLE_MONSTER_SET,
@@ -388,7 +480,10 @@ export async function performOcgMonsterAction(input: {
       await processUntilDecision(core, session);
     }
 
-    return getOcgDuelSessionSnapshot(input.matchId);
+    return {
+      ...getOcgDuelSessionSnapshot(input.matchId),
+      events: stateEventsSince(session, eventStart),
+    };
   } finally {
     session.busy = false;
   }
@@ -420,6 +515,7 @@ export async function performOcgSpellAction(input: {
   session.busy = true;
   try {
     const core = await loadOcgCore();
+    const eventStart = session.messages.length;
     core.duelSetResponse(session.handle, {
       type: RESPONSE_SELECT_IDLECMD,
       action: input.action === "activate" ? IDLE_ACTIVATE : IDLE_SPELL_SET,
@@ -448,7 +544,10 @@ export async function performOcgSpellAction(input: {
         input.action !== "activate"
       );
     }
-    return getOcgDuelSessionSnapshot(input.matchId);
+    return {
+      ...getOcgDuelSessionSnapshot(input.matchId),
+      events: stateEventsSince(session, eventStart),
+    };
   } finally {
     session.busy = false;
   }
@@ -487,6 +586,7 @@ export async function performOcgEndTurn(matchId: string, userId: string) {
   session.busy = true;
   try {
     const core = await loadOcgCore();
+    const eventStart = session.messages.length;
     let pending = getPendingMessage(session);
     while (
       pending?.type === MESSAGE_SELECT_CHAIN &&
@@ -521,7 +621,10 @@ export async function performOcgEndTurn(matchId: string, userId: string) {
       throw new Error("O OCGCore não permite terminar o turno agora.");
     }
     await processUntilDecision(core, session);
-    return getOcgDuelSessionSnapshot(matchId);
+    return {
+      ...getOcgDuelSessionSnapshot(matchId),
+      events: stateEventsSince(session, eventStart),
+    };
   } finally {
     session.busy = false;
   }
@@ -544,6 +647,7 @@ export async function performOcgPhaseChange(
   session.busy = true;
   try {
     const core = await loadOcgCore();
+    const eventStart = session.messages.length;
     if (
       target === "battle" &&
       pending.type === MESSAGE_SELECT_IDLECMD &&
@@ -568,7 +672,10 @@ export async function performOcgPhaseChange(
       throw new Error("O OCGCore não permite mudar para essa fase agora.");
     }
     await processUntilDecision(core, session);
-    return getOcgDuelSessionSnapshot(matchId);
+    return {
+      ...getOcgDuelSessionSnapshot(matchId),
+      events: stateEventsSince(session, eventStart),
+    };
   } finally {
     session.busy = false;
   }
