@@ -114,14 +114,16 @@ function applyOcgEvents(state: DuelGameState, events: OcgStateEvent[]) {
       const list = event.location === 4 ? player.monsters : player.spellTraps;
       const card = list.find((entry) => entry.zone === event.sequence);
       if (card) {
+        const faceDown = (event.position & 0b1010) !== 0;
+        const defense = (event.position & 0b1100) !== 0;
         card.position =
-          event.position === 8
+          faceDown && defense
             ? "face_down_defense"
-            : event.position === 4
+            : defense
               ? "face_up_defense"
-              : event.position === 1
-                ? "face_up_attack"
-                : "face_down";
+              : faceDown
+                ? "face_down"
+                : "face_up_attack";
       }
       continue;
     }
@@ -177,21 +179,28 @@ function applyOcgEvents(state: DuelGameState, events: OcgStateEvent[]) {
     } else if (event.to.location === 64) {
       toPlayer.extra.push(event.cardId);
     } else if (event.to.location === 4) {
+      const faceDown = (event.to.position & 0b1010) !== 0;
+      const defense = (event.to.position & 0b1100) !== 0;
       toPlayer.monsters.push({
         cardId: event.cardId,
         zone: event.to.sequence,
         position:
-          event.to.position === 8
+          faceDown && defense
             ? "face_down_defense"
-            : event.to.position === 4
+            : defense
               ? "face_up_defense"
-              : "face_up_attack",
+              : faceDown
+                ? "face_down"
+                : "face_up_attack",
       });
     } else if (event.to.location === 8 || event.to.location === 256) {
       toPlayer.spellTraps.push({
         cardId: event.cardId,
         zone: event.to.location === 256 ? 5 : event.to.sequence,
-        position: event.to.position === 8 ? "face_down" : "face_up_attack",
+        position:
+          (event.to.position & 0b1010) !== 0
+            ? "face_down"
+            : "face_up_attack",
       });
     }
   }
