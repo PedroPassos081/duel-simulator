@@ -33,12 +33,15 @@ export async function Navbar() {
           <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-white hover:opacity-90">
             <Image
               src="/icon.png"
-              alt=""
+              alt="Emblema Master Duelist"
               width={36}
               height={36}
               className="h-9 w-9 object-contain"
             />
-            <span className="hidden sm:inline">Duel Simulator</span>
+            <span className="hidden leading-none sm:inline">
+              <span className="block text-base font-black uppercase tracking-[0.12em] text-edison-gold">Master</span>
+              <span className="mt-0.5 block text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-gray-100">Duelist</span>
+            </span>
           </Link>
           <Link href="/deck-builder" className="text-sm text-gray-300 hover:text-white transition-colors">
             Deck
