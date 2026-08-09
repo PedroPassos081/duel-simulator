@@ -194,6 +194,7 @@ function ZoneRow({
   cards = [],
   onSelect,
   selectable = false,
+  selectableZones,
   onZoneSelect,
 }: {
   opponent?: boolean;
@@ -201,6 +202,7 @@ function ZoneRow({
   cards?: FieldCardView[];
   onSelect?: (card: Card) => void;
   selectable?: boolean;
+  selectableZones?: number[];
   onZoneSelect?: (zone: number) => void;
 }) {
   const pink = kind === "spell";
@@ -212,6 +214,9 @@ function ZoneRow({
         const defensePosition =
           fieldCard?.position === "face_down_defense" ||
           fieldCard?.position === "face_up_defense";
+        const zoneIsSelectable =
+          selectable &&
+          (selectableZones === undefined || selectableZones.includes(index));
         return fieldCard ? (
           <button
             key={`${card?.id ?? "hidden"}-${index}`}
@@ -240,10 +245,10 @@ function ZoneRow({
           <button
             key={index}
             type="button"
-            disabled={!selectable}
-            onClick={() => onZoneSelect?.(index)}
+            disabled={!zoneIsSelectable}
+            onClick={() => zoneIsSelectable && onZoneSelect?.(index)}
             className={`h-[clamp(96px,14.5vh,142px)] aspect-[0.72] justify-self-center overflow-hidden rounded-[3px] p-0 transition [&>div]:h-full [&>div]:w-full ${
-              selectable
+              zoneIsSelectable
                 ? "animate-pulse ring-2 ring-inset ring-edison-gold hover:bg-edison-gold/15"
                 : ""
             }`}
@@ -775,6 +780,32 @@ export default function DuelPlayPage() {
   const selectedActions = selectedCard
     ? gameState?.legalActions[String(selectedCard.id)] ?? []
     : [];
+  const inlinePlaceDecision = useMemo(() => {
+    const decision = gameState?.decision;
+    const meId = gameState?.meId;
+    if (!meId || decision?.type !== "place" || decision.count !== 1) {
+      return undefined;
+    }
+
+    const places = decision.places.filter(
+      (place) =>
+        place.controllerId === meId &&
+        (place.location === 4 || place.location === 8) &&
+        place.sequence >= 0 &&
+        place.sequence < 5
+    );
+    if (places.length !== decision.places.length || places.length === 0) {
+      return undefined;
+    }
+
+    const location = places[0].location;
+    if (!places.every((place) => place.location === location)) return undefined;
+
+    return {
+      kind: location === 4 ? ("monster" as const) : ("spell" as const),
+      places,
+    };
+  }, [gameState]);
   const decisionSignature = gameState?.decision
     ? gameState.decision.type === "cards" || gameState.decision.type === "tributes"
       ? `${gameState.decision.type}:${gameState.decision.candidates
@@ -886,6 +917,14 @@ export default function DuelPlayPage() {
     });
   }
 
+  function chooseInlineDecisionZone(zone: number) {
+    const place = inlinePlaceDecision?.places.find(
+      (candidate) => candidate.sequence === zone
+    );
+    if (!place) return;
+    sendAction({ type: "ocg_decision", placeIndices: [place.index] });
+  }
+
   function selectPhase(phase: string) {
     const target = PHASE_KEYS[phase];
     if (phase === "EP") {
@@ -970,7 +1009,7 @@ export default function DuelPlayPage() {
         </div>
       )}
 
-      {gameState?.decision && (
+      {gameState?.decision && !inlinePlaceDecision && (
         <div className="absolute inset-0 z-[95] flex items-center justify-center bg-black/65 p-4">
           <div className="w-full max-w-2xl rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
             <p className="text-[10px] font-black uppercase tracking-[0.25em] text-edison-gold">
@@ -1213,6 +1252,14 @@ export default function DuelPlayPage() {
         </div>
       )}
 
+      {inlinePlaceDecision && (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-[80] flex justify-center">
+          <div className="rounded-full border border-edison-gold/45 bg-[#121019]/95 px-5 py-2 text-xs font-black text-edison-gold shadow-2xl backdrop-blur">
+            Escolha uma das zonas iluminadas para concluir a invocação
+          </div>
+        </div>
+      )}
+
       {gameState?.chain && !gameState.decision && (
         <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/45 pointer-events-none">
           <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
@@ -1376,8 +1423,20 @@ export default function DuelPlayPage() {
                     kind="monster"
                     cards={fieldMonsters}
                     onSelect={setSelectedCard}
-                    selectable={pendingPlacement?.kind === "monster"}
-                    onZoneSelect={placeCard}
+                    selectable={
+                      pendingPlacement?.kind === "monster" ||
+                      inlinePlaceDecision?.kind === "monster"
+                    }
+                    selectableZones={
+                      inlinePlaceDecision?.kind === "monster"
+                        ? inlinePlaceDecision.places.map((place) => place.sequence)
+                        : undefined
+                    }
+                    onZoneSelect={
+                      inlinePlaceDecision?.kind === "monster"
+                        ? chooseInlineDecisionZone
+                        : placeCard
+                    }
                   />
                 </div>
                 <div>
@@ -1385,8 +1444,20 @@ export default function DuelPlayPage() {
                     kind="spell"
                     cards={fieldSpellTraps}
                     onSelect={setSelectedCard}
-                    selectable={pendingPlacement?.kind === "spell"}
-                    onZoneSelect={placeCard}
+                    selectable={
+                      pendingPlacement?.kind === "spell" ||
+                      inlinePlaceDecision?.kind === "spell"
+                    }
+                    selectableZones={
+                      inlinePlaceDecision?.kind === "spell"
+                        ? inlinePlaceDecision.places.map((place) => place.sequence)
+                        : undefined
+                    }
+                    onZoneSelect={
+                      inlinePlaceDecision?.kind === "spell"
+                        ? chooseInlineDecisionZone
+                        : placeCard
+                    }
                   />
                 </div>
               </div>
