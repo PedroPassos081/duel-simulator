@@ -39,6 +39,7 @@ const RESPONSE_SELECT_CARD = 5;
 const RESPONSE_SELECT_POSITION = 11;
 const RESPONSE_SELECT_TRIBUTE = 12;
 const IDLE_SUMMON = 0;
+const IDLE_SPECIAL_SUMMON = 1;
 const IDLE_MONSTER_SET = 3;
 const IDLE_SPELL_SET = 4;
 const IDLE_ACTIVATE = 5;
@@ -124,7 +125,17 @@ export type OcgPendingDecision =
         sequence: number;
       }>;
     }
-  | { type: "position"; cardId: number; positions: number[] };
+  | { type: "position"; cardId: number; positions: number[] }
+  | {
+      type: "place";
+      count: number;
+      places: Array<{
+        index: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+      }>;
+    };
 
 declare global {
   // eslint-disable-next-line no-var
@@ -447,6 +458,7 @@ export function getOcgLegalActions(matchId: string, userId: string) {
   };
   if (pending.type === MESSAGE_SELECT_IDLECMD) {
     add("summons", "summon");
+    add("special_summons", "special_summon");
     add("monster_sets", "set_monster");
     add("spell_sets", "set_spell_trap");
     add("activates", "activate");
@@ -458,6 +470,38 @@ export function getOcgLegalActions(matchId: string, userId: string) {
     add("selects", "activate");
   }
   return actions;
+}
+
+function pendingPlaces(
+  session: OcgSession,
+  message: Record<string, unknown>
+) {
+  if (typeof message.field_mask !== "number") return [];
+  const places: Array<{
+    index: number;
+    controllerId: string;
+    location: number;
+    sequence: number;
+  }> = [];
+  for (let controller = 0; controller < 2; controller += 1) {
+    const controllerOffset = controller * 16;
+    for (const [location, start, zones] of [
+      [LOCATION_MZONE, 0, 7],
+      [LOCATION_SZONE, 8, 8],
+    ] as const) {
+      for (let sequence = 0; sequence < zones; sequence += 1) {
+        const bit = controllerOffset + start + sequence;
+        if ((message.field_mask & 2 ** bit) !== 0) continue;
+        places.push({
+          index: places.length,
+          controllerId: session.players[controller],
+          location,
+          sequence,
+        });
+      }
+    }
+  }
+  return places;
 }
 
 function pendingCards(message: Record<string, unknown>) {
@@ -552,6 +596,14 @@ export function getOcgPendingDecision(
     };
   }
 
+  if (pending.type === MESSAGE_SELECT_PLACE) {
+    return {
+      type: "place",
+      count: typeof pending.count === "number" ? pending.count : 1,
+      places: pendingPlaces(session, pending),
+    };
+  }
+
   return null;
 }
 
@@ -562,6 +614,7 @@ export async function performOcgDecision(input: {
   optionIndex?: number;
   cardIndices?: number[] | null;
   position?: number;
+  placeIndices?: number[];
 }) {
   const session = sessions.get(input.matchId);
   if (!session) return null;
@@ -641,6 +694,30 @@ export async function performOcgDecision(input: {
       type: RESPONSE_SELECT_POSITION,
       position: input.position,
     };
+  } else if (pending.type === MESSAGE_SELECT_PLACE) {
+    const places = pendingPlaces(session, pending);
+    const count = typeof pending.count === "number" ? pending.count : 1;
+    const indices = input.placeIndices ?? [];
+    const unique = new Set(indices);
+    if (
+      indices.length !== count ||
+      unique.size !== indices.length ||
+      indices.some(
+        (index) => !Number.isInteger(index) || index < 0 || index >= places.length
+      )
+    ) {
+      throw new Error(`Escolha exatamente ${count} zona(s) válida(s).`);
+    }
+    response = {
+      type: RESPONSE_SELECT_PLACE,
+      places: indices.map((index) => ({
+        player: session.players.indexOf(
+          places[index].controllerId
+        ),
+        location: places[index].location,
+        sequence: places[index].sequence,
+      })),
+    };
   } else {
     throw new Error("Esta decisão do OCGCore ainda não é suportada.");
   }
@@ -663,9 +740,9 @@ export async function performOcgDecision(input: {
 export async function performOcgMonsterAction(input: {
   matchId: string;
   userId: string;
-  action: "summon" | "set_monster";
+  action: "summon" | "special_summon" | "set_monster";
   cardId: number;
-  zone: number;
+  zone?: number;
 }) {
   const session = sessions.get(input.matchId);
   if (!session) return null;
@@ -680,7 +757,12 @@ export async function performOcgMonsterAction(input: {
     throw new Error("O OCGCore não está aguardando essa ação.");
   }
 
-  const list = input.action === "summon" ? "summons" : "monster_sets";
+  const list =
+    input.action === "summon"
+      ? "summons"
+      : input.action === "special_summon"
+        ? "special_summons"
+        : "monster_sets";
   const index = cardIndex(pending, list, input.cardId);
   if (index < 0) {
     throw new Error("Essa carta não pode realizar essa ação agora.");
@@ -692,13 +774,22 @@ export async function performOcgMonsterAction(input: {
     const eventStart = session.messages.length;
     core.duelSetResponse(session.handle, {
       type: RESPONSE_SELECT_IDLECMD,
-      action: input.action === "summon" ? IDLE_SUMMON : IDLE_MONSTER_SET,
+      action:
+        input.action === "summon"
+          ? IDLE_SUMMON
+          : input.action === "special_summon"
+            ? IDLE_SPECIAL_SUMMON
+            : IDLE_MONSTER_SET,
       index,
     });
     await processUntilDecision(core, session);
 
     const placeRequest = getPendingMessage(session);
-    if (placeRequest?.type === MESSAGE_SELECT_PLACE) {
+    if (
+      input.action !== "special_summon" &&
+      placeRequest?.type === MESSAGE_SELECT_PLACE &&
+      Number.isInteger(input.zone)
+    ) {
       if (session.players[Number(placeRequest.player)] !== input.userId) {
         throw new Error("O motor solicitou a zona ao jogador incorreto.");
       }
@@ -708,7 +799,7 @@ export async function performOcgMonsterAction(input: {
           {
             player: Number(placeRequest.player),
             location: LOCATION_MZONE,
-            sequence: input.zone,
+            sequence: input.zone!,
           },
         ],
       });
