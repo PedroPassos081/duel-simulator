@@ -50,6 +50,16 @@ async function fetchCards(url: string, label: string): Promise<ApiCard[]> {
   return payload.data;
 }
 
+async function fetchOptionalCards(url: string, label: string): Promise<ApiCard[]> {
+  try {
+    return await fetchCards(url, label);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[SEED] Aviso: ${message}. Usando descrições em inglês.`);
+    return [];
+  }
+}
+
 function mergeCards(...catalogs: ApiCard[][]) {
   return [...new Map(catalogs.flat().map((card) => [card.id, card])).values()];
 }
@@ -88,11 +98,6 @@ const tabelaDePrecosExcecoes: Record<
 };
 
 async function main() {
-  console.log(`\n[SEED] Limpando dados antigos da loja e cartas...`);
-  // Deleta listagens e cartas antigas em cascata para garantir que não fiquem resíduos
-  await prisma.shopListing.deleteMany();
-  await prisma.card.deleteMany();
-
   console.log(`[SEED] Buscando catálogo TCG em Inglês (Nomes Oficiais)...`);
   const urlEn = `https://db.ygoprodeck.com/api/v7/cardinfo.php?enddate=2006-12-31&format=tcg`;
   const baseCardsEn = await fetchCards(urlEn, "catálogo TCG em inglês");
@@ -103,13 +108,18 @@ async function main() {
     `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${testIds}`,
     "pacote Blackwing em inglês"
   );
+  const returnedTestIds = new Set(testCardsEn.map((card) => card.id));
+  const missingTestIds = TEST_CARD_IDS.filter((id) => !returnedTestIds.has(id));
+  if (missingTestIds.length > 0) {
+    throw new Error(`A API não retornou as cartas de teste: ${missingTestIds.join(", ")}.`);
+  }
   const apiCardsEn = mergeCards(baseCardsEn, testCardsEn);
 
   console.log(`[SEED] Buscando catálogo TCG em Português (Efeitos/Descrições)...`);
   const urlPt = `https://db.ygoprodeck.com/api/v7/cardinfo.php?enddate=2006-12-31&format=tcg&language=pt`;
   const [baseCardsPt, testCardsPt] = await Promise.all([
-    fetchCards(urlPt, "catálogo TCG em português"),
-    fetchCards(
+    fetchOptionalCards(urlPt, "catálogo TCG em português"),
+    fetchOptionalCards(
       `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${testIds}&language=pt`,
       "pacote Blackwing em português"
     ),
