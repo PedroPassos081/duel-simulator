@@ -61,6 +61,7 @@ type RoomGameState = {
   currentTurn: number;
   currentPhase: string;
   legalActions: Record<string, DuelCardAction[]>;
+  decision?: OcgDecision | null;
   chain?: {
     card: Card | null;
     linkCount: number;
@@ -68,6 +69,35 @@ type RoomGameState = {
     controllerId: string;
   } | null;
 };
+
+type OcgDecision =
+  | {
+      type: "yes_no";
+      source: "effect" | "generic";
+      cardId?: number;
+      description: string;
+    }
+  | { type: "option"; options: string[] }
+  | {
+      type: "cards" | "tributes";
+      min: number;
+      max: number;
+      canCancel: boolean;
+      candidates: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        card: Card | null;
+      }>;
+    }
+  | {
+      type: "position";
+      cardId: number;
+      positions: number[];
+      card: Card | null;
+    };
 
 type DuelCardAction =
   | "summon"
@@ -691,6 +721,7 @@ export default function DuelPlayPage() {
   const [acting, setActing] = useState(false);
   const [selectedHandIndex, setSelectedHandIndex] = useState<number>();
   const [pendingPlacement, setPendingPlacement] = useState<PendingPlacement>();
+  const [selectedDecisionIndices, setSelectedDecisionIndices] = useState<number[]>([]);
 
   useEffect(() => {
     setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
@@ -730,6 +761,17 @@ export default function DuelPlayPage() {
   const selectedActions = selectedCard
     ? gameState?.legalActions[String(selectedCard.id)] ?? []
     : [];
+  const decisionSignature = gameState?.decision
+    ? gameState.decision.type === "cards" || gameState.decision.type === "tributes"
+      ? `${gameState.decision.type}:${gameState.decision.candidates
+          .map((candidate) => candidate.index)
+          .join(",")}:${gameState.decision.min}:${gameState.decision.max}`
+      : `${gameState.decision.type}:${"cardId" in gameState.decision ? gameState.decision.cardId ?? "" : ""}`
+    : "";
+
+  useEffect(() => {
+    setSelectedDecisionIndices([]);
+  }, [decisionSignature]);
 
   useEffect(() => {
     setPlayerDeckCount(
@@ -763,6 +805,13 @@ export default function DuelPlayPage() {
           phase: "standby" | "main1" | "battle" | "main2";
         }
       | { type: "pass_chain" }
+      | {
+          type: "ocg_decision";
+          yes?: boolean;
+          optionIndex?: number;
+          cardIndices?: number[] | null;
+          position?: number;
+        }
       | {
           type: "summon" | "set_monster" | "set_spell_trap" | "activate";
           cardId: number;
@@ -854,7 +903,194 @@ export default function DuelPlayPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
 
-      {gameState?.chain && (
+      {gameState?.decision && (
+        <div className="absolute inset-0 z-[95] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-edison-gold">
+              Decisão do efeito
+            </p>
+
+            {gameState.decision.type === "yes_no" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  Deseja aplicar este efeito?
+                </h2>
+                <p className="mt-2 text-xs text-white/45">
+                  O duelo continuará depois da sua escolha.
+                </p>
+                <div className="mt-5 flex justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => sendAction({ type: "ocg_decision", yes: true })}
+                    disabled={acting}
+                    className="rounded-lg bg-edison-gold px-7 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                  >
+                    Sim
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sendAction({ type: "ocg_decision", yes: false })}
+                    disabled={acting}
+                    className="rounded-lg border border-white/15 bg-white/5 px-7 py-2.5 text-xs font-black text-white disabled:opacity-40"
+                  >
+                    Não
+                  </button>
+                </div>
+              </>
+            )}
+
+            {gameState.decision.type === "option" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">Escolha uma opção</h2>
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                  {gameState.decision.options.map((option, index) => (
+                    <button
+                      key={`${option}-${index}`}
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", optionIndex: index })
+                      }
+                      disabled={acting}
+                      className="rounded-lg border border-edison-gold/25 bg-edison-gold/10 px-4 py-3 text-left text-xs font-bold text-white transition hover:bg-edison-gold/20 disabled:opacity-40"
+                    >
+                      Opção {index + 1}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {(gameState.decision.type === "cards" ||
+              gameState.decision.type === "tributes") && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  {gameState.decision.type === "tributes"
+                    ? "Escolha os tributos"
+                    : "Escolha as cartas"}
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  Selecione entre {gameState.decision.min} e {gameState.decision.max}.
+                </p>
+                <div className="mt-5 flex max-h-[48vh] flex-wrap justify-center gap-3 overflow-y-auto p-1">
+                  {gameState.decision.candidates.map((candidate) => {
+                    const selected = selectedDecisionIndices.includes(candidate.index);
+                    const maxSelections =
+                      gameState.decision?.type === "cards" ||
+                      gameState.decision?.type === "tributes"
+                        ? gameState.decision.max
+                        : 0;
+                    return (
+                      <button
+                        key={`${candidate.index}-${candidate.cardId}`}
+                        type="button"
+                        onClick={() =>
+                          setSelectedDecisionIndices((current) =>
+                            current.includes(candidate.index)
+                              ? current.filter((index) => index !== candidate.index)
+                              : current.length < maxSelections
+                                ? [...current, candidate.index]
+                                : current
+                          )
+                        }
+                        className={`w-24 rounded-lg border p-2 transition ${
+                          selected
+                            ? "border-edison-gold bg-edison-gold/20 ring-2 ring-edison-gold/35"
+                            : "border-white/10 bg-white/5 hover:border-white/30"
+                        }`}
+                      >
+                        <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                          {candidate.card?.imageUrl ? (
+                            <Image
+                              src={candidate.card.imageUrl}
+                              alt={candidate.card.name}
+                              fill
+                              sizes="96px"
+                              className="object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                              Carta
+                            </div>
+                          )}
+                        </div>
+                        <span className="mt-1.5 block truncate text-[9px] font-bold">
+                          {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-5 flex justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      sendAction({
+                        type: "ocg_decision",
+                        cardIndices: selectedDecisionIndices,
+                      })
+                    }
+                    disabled={
+                      acting ||
+                      selectedDecisionIndices.length < gameState.decision.min ||
+                      selectedDecisionIndices.length > gameState.decision.max
+                    }
+                    className="rounded-lg bg-edison-gold px-6 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                  >
+                    Confirmar ({selectedDecisionIndices.length})
+                  </button>
+                  {gameState.decision.canCancel && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", cardIndices: null })
+                      }
+                      disabled={acting}
+                      className="rounded-lg border border-white/15 bg-white/5 px-6 py-2.5 text-xs font-black disabled:opacity-40"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {gameState.decision.type === "position" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">Escolha a posição</h2>
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                  {gameState.decision.positions.map((position) => (
+                    <button
+                      key={position}
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", position })
+                      }
+                      disabled={acting}
+                      className="rounded-lg border border-edison-gold/25 bg-edison-gold/10 px-4 py-3 text-xs font-black transition hover:bg-edison-gold/20 disabled:opacity-40"
+                    >
+                      {{
+                        1: "Ataque com a face para cima",
+                        2: "Ataque com a face para baixo",
+                        4: "Defesa com a face para cima",
+                        8: "Defesa com a face para baixo",
+                      }[position] ?? "Posição"}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {actionError && (
+              <p className="mt-4 rounded bg-red-950/80 px-3 py-2 text-xs text-red-200">
+                {actionError}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {gameState?.chain && !gameState.decision && (
         <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/45 pointer-events-none">
           <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
             <p className="text-[10px] font-black uppercase tracking-[0.25em] text-edison-gold">
