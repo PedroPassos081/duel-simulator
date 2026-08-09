@@ -112,6 +112,11 @@ export async function GET(
     ? storedState?.players[opponentPlayer.userId]
     : undefined;
   const pendingDecision = getOcgPendingDecision(room.id, userId);
+  const ocgLegalActions = getOcgLegalActions(room.id, userId);
+  const specialSummonCardIds = Object.entries(ocgLegalActions ?? {})
+    .filter(([, actions]) => actions.includes("special_summon"))
+    .map(([cardId]) => Number(cardId))
+    .filter(Number.isInteger);
   const decisionCardIds = pendingDecision
     ? pendingDecision.type === "cards" || pendingDecision.type === "tributes"
       ? pendingDecision.candidates.map((candidate) => candidate.cardId)
@@ -133,6 +138,7 @@ export async function GET(
           .filter((entry) => !entry.position.startsWith("face_down"))
           .map((entry) => entry.cardId) ?? []),
         ...decisionCardIds,
+        ...specialSummonCardIds,
       ]
     : [];
   const visibleCards = ownState
@@ -167,7 +173,6 @@ export async function GET(
       legalActions[String(cardId)] = actions;
     }
   }
-  const ocgLegalActions = getOcgLegalActions(room.id, userId);
 
   const fieldView = (
     entries: NonNullable<typeof ownState>["monsters"],
@@ -197,6 +202,7 @@ export async function GET(
     game:
       ["active", "finished"].includes(room.status) && ownState
         ? {
+            meId: userId,
             ownHand: ownState.hand
               .map((cardId) => cardById.get(cardId))
               .filter(Boolean),
@@ -223,6 +229,9 @@ export async function GET(
             currentTurn: storedState.turn,
             currentPhase: room.currentPhase,
             legalActions: ocgLegalActions ?? legalActions,
+            specialSummonCandidates: specialSummonCardIds
+              .map((cardId) => cardById.get(cardId))
+              .filter(Boolean),
             decision: pendingDecision
               ? pendingDecision.type === "cards" ||
                 pendingDecision.type === "tributes"
