@@ -775,7 +775,6 @@ export default function DuelPlayPage() {
   const [selectedHandIndex, setSelectedHandIndex] = useState<number>();
   const [pendingPlacement, setPendingPlacement] = useState<PendingPlacement>();
   const [selectedDecisionIndices, setSelectedDecisionIndices] = useState<number[]>([]);
-  const [selectedPlaceIndices, setSelectedPlaceIndices] = useState<number[]>([]);
   const [specialSummonOpen, setSpecialSummonOpen] = useState(false);
 
   useEffect(() => {
@@ -826,21 +825,27 @@ export default function DuelPlayPage() {
     const places = decision.places.filter(
       (place) =>
         place.controllerId === meId &&
-        (place.location === 4 || place.location === 8) &&
-        place.sequence >= 0 &&
-        place.sequence < 5
+        ((place.location === 4 &&
+          place.sequence >= 0 &&
+          place.sequence < 5) ||
+          (place.location === 8 &&
+            place.sequence >= 0 &&
+            place.sequence <= 5))
     );
-    if (places.length !== decision.places.length || places.length === 0) {
+    if (places.length === 0) return undefined;
+
+    const kindForPlace = (place: (typeof places)[number]) =>
+      place.location === 4
+        ? ("monster" as const)
+        : place.sequence === 5
+          ? ("field" as const)
+          : ("spell" as const);
+    const kind = kindForPlace(places[0]);
+    if (!places.every((place) => kindForPlace(place) === kind)) {
       return undefined;
     }
 
-    const location = places[0].location;
-    if (!places.every((place) => place.location === location)) return undefined;
-
-    return {
-      kind: location === 4 ? ("monster" as const) : ("spell" as const),
-      places,
-    };
+    return { kind, places };
   }, [gameState]);
   const decisionSignature = gameState?.decision
     ? gameState.decision.type === "cards" || gameState.decision.type === "tributes"
@@ -852,7 +857,6 @@ export default function DuelPlayPage() {
 
   useEffect(() => {
     setSelectedDecisionIndices([]);
-    setSelectedPlaceIndices([]);
   }, [decisionSignature]);
 
   useEffect(() => {
@@ -916,7 +920,6 @@ export default function DuelPlayPage() {
     } else {
       setSelectedHandIndex(undefined);
       setPendingPlacement(undefined);
-      setSelectedPlaceIndices([]);
       setSpecialSummonOpen(false);
     }
     setActing(false);
@@ -1045,7 +1048,9 @@ export default function DuelPlayPage() {
         </div>
       )}
 
-      {gameState?.decision && !inlinePlaceDecision && (
+      {gameState?.decision &&
+        gameState.decision.type !== "place" &&
+        !inlinePlaceDecision && (
         <div className="absolute inset-0 z-[95] flex items-center justify-center bg-black/65 p-4">
           <div className="w-full max-w-2xl rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
             <p className="text-[10px] font-black uppercase tracking-[0.25em] text-edison-gold">
@@ -1223,62 +1228,6 @@ export default function DuelPlayPage() {
               </>
             )}
 
-            {gameState.decision.type === "place" && (
-              <>
-                <h2 className="mt-2 text-xl font-black">Escolha a zona</h2>
-                <p className="mt-1 text-xs text-white/50">
-                  Selecione exatamente {gameState.decision.count} zona(s) permitida(s) pelo motor.
-                </p>
-                <div className="mt-5 grid max-h-[48vh] gap-2 overflow-y-auto sm:grid-cols-2">
-                  {gameState.decision.places.map((place) => {
-                    const selected = selectedPlaceIndices.includes(place.index);
-                    return (
-                      <button
-                        key={place.index}
-                        type="button"
-                        onClick={() =>
-                          setSelectedPlaceIndices((current) =>
-                            current.includes(place.index)
-                              ? current.filter((index) => index !== place.index)
-                              : current.length <
-                                  (gameState.decision?.type === "place"
-                                    ? gameState.decision.count
-                                    : 0)
-                                ? [...current, place.index]
-                                : current
-                          )
-                        }
-                        className={`rounded-lg border px-4 py-3 text-left text-xs font-bold transition ${
-                          selected
-                            ? "border-edison-gold bg-edison-gold/20"
-                            : "border-white/10 bg-white/5 hover:border-white/30"
-                        }`}
-                      >
-                        {place.controllerId === gameState.meId ? "Sua" : "Do oponente"}{" "}
-                        {place.location === 4 ? "Zona de Monstro" : "Zona de Magia/Armadilha"}{" "}
-                        {place.sequence + 1}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    sendAction({
-                      type: "ocg_decision",
-                      placeIndices: selectedPlaceIndices,
-                    })
-                  }
-                  disabled={
-                    acting || selectedPlaceIndices.length !== gameState.decision.count
-                  }
-                  className="mt-5 rounded-lg bg-edison-gold px-6 py-2.5 text-xs font-black text-black disabled:opacity-40"
-                >
-                  Confirmar zona
-                </button>
-              </>
-            )}
-
             {actionError && (
               <p className="mt-4 rounded bg-red-950/80 px-3 py-2 text-xs text-red-200">
                 {actionError}
@@ -1433,9 +1382,16 @@ export default function DuelPlayPage() {
               <div className="flex flex-col items-center gap-2">
                 <FieldZone
                   fieldCard={ownFieldSpell}
-                  selectable={pendingPlacement?.kind === "field"}
+                  selectable={
+                    pendingPlacement?.kind === "field" ||
+                    inlinePlaceDecision?.kind === "field"
+                  }
                   onSelect={setSelectedCard}
-                  onZoneSelect={() => placeCard(5)}
+                  onZoneSelect={() =>
+                    inlinePlaceDecision?.kind === "field"
+                      ? chooseInlineDecisionZone(5)
+                      : placeCard(5)
+                  }
                 />
                 <div className="relative">
                   <EmptyZone accent="blue" />
