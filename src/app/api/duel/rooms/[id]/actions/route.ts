@@ -9,6 +9,7 @@ import {
 } from "@/lib/duel/game-state";
 import {
   passOcgChain,
+  performOcgDecision,
   performOcgEndTurn,
   performOcgPhaseChange,
   performOcgMonsterAction,
@@ -24,6 +25,13 @@ const actionSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("end_turn") }),
   z.object({ type: z.literal("pass_chain") }),
+  z.object({
+    type: z.literal("ocg_decision"),
+    yes: z.boolean().optional(),
+    optionIndex: z.number().int().nonnegative().optional(),
+    cardIndices: z.array(z.number().int().nonnegative()).nullable().optional(),
+    position: z.number().int().optional(),
+  }),
   z.object({
     type: z.enum(["summon", "set_monster", "set_spell_trap", "activate"]),
     cardId: z.number().int().positive(),
@@ -246,6 +254,46 @@ export async function POST(
   }
 
   const state = structuredClone(room.engineState) as DuelGameState;
+  if (parsed.data.type === "ocg_decision") {
+    try {
+      const ocgResult = await performOcgDecision({
+        matchId: room.id,
+        userId,
+        yes: parsed.data.yes,
+        optionIndex: parsed.data.optionIndex,
+        cardIndices: parsed.data.cardIndices,
+        position: parsed.data.position,
+      });
+      if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
+      const resolvedPhase = applyOcgEvents(state, ocgResult.events ?? []);
+      if (state.chain) {
+        const pendingType = ocgResult.pendingMessageType;
+        if (
+          typeof pendingType === "number" &&
+          pendingType >= 12 &&
+          pendingType <= 26 &&
+          ocgResult.pendingPlayerId
+        ) {
+          state.chain.awaitingPlayerId = ocgResult.pendingPlayerId;
+        } else {
+          delete state.chain;
+        }
+      }
+      await persistDuelState(room.id, state, resolvedPhase);
+      return NextResponse.json({ ok: true, decisionResolved: true });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "O OCGCore recusou essa decisão.",
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   if (state.chain) {
     if (
       parsed.data.type !== "pass_chain" ||
@@ -267,6 +315,16 @@ export async function POST(
     }
     const ocgEvents = ocgResult?.events ?? [];
     const resolvedPhase = applyOcgEvents(state, ocgEvents);
+    if (
+      typeof ocgResult.pendingMessageType === "number" &&
+      ocgResult.pendingMessageType >= 12 &&
+      ocgResult.pendingMessageType <= 26 &&
+      ocgResult.pendingPlayerId
+    ) {
+      state.chain.awaitingPlayerId = ocgResult.pendingPlayerId;
+      await persistDuelState(room.id, state, resolvedPhase);
+      return NextResponse.json({ ok: true, awaitingDecision: true });
+    }
     const controller = state.players[link.playerId];
     const card = await prisma.card.findUnique({ where: { id: link.cardId } });
     if (!card) {
