@@ -8,6 +8,7 @@ import {
   type DuelPlayerState,
 } from "@/lib/duel/game-state";
 import {
+  getOcgLegalActions,
   passOcgChain,
   performOcgDecision,
   performOcgEndTurn,
@@ -31,6 +32,11 @@ const actionSchema = z.discriminatedUnion("type", [
     optionIndex: z.number().int().nonnegative().optional(),
     cardIndices: z.array(z.number().int().nonnegative()).nullable().optional(),
     position: z.number().int().optional(),
+    placeIndices: z.array(z.number().int().nonnegative()).optional(),
+  }),
+  z.object({
+    type: z.literal("special_summon"),
+    cardId: z.number().int().positive(),
   }),
   z.object({
     type: z.enum(["summon", "set_monster", "set_spell_trap", "activate"]),
@@ -263,6 +269,7 @@ export async function POST(
         optionIndex: parsed.data.optionIndex,
         cardIndices: parsed.data.cardIndices,
         position: parsed.data.position,
+        placeIndices: parsed.data.placeIndices,
       });
       if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
       const resolvedPhase = applyOcgEvents(state, ocgResult.events ?? []);
@@ -444,10 +451,20 @@ export async function POST(
         { status: 409 }
       );
     }
+    const legalOcgActions = getOcgLegalActions(room.id, userId) ?? {};
+    const isSpecialSummon = parsed.data.type === "special_summon";
     const handIndex = player.hand.indexOf(parsed.data.cardId);
-    if (handIndex < 0) {
+    if (
+      (!isSpecialSummon && handIndex < 0) ||
+      (isSpecialSummon &&
+        !legalOcgActions[String(parsed.data.cardId)]?.includes("special_summon"))
+    ) {
       return NextResponse.json(
-        { error: "Esta carta não está na sua mão." },
+        {
+          error: isSpecialSummon
+            ? "Esta carta não pode ser invocada especialmente agora."
+            : "Esta carta não está na sua mão.",
+        },
         { status: 409 }
       );
     }
@@ -460,6 +477,7 @@ export async function POST(
 
     if (
       parsed.data.type === "summon" ||
+      parsed.data.type === "special_summon" ||
       parsed.data.type === "set_monster"
     ) {
       try {
@@ -468,7 +486,7 @@ export async function POST(
           userId,
           action: parsed.data.type,
           cardId: parsed.data.cardId,
-          zone: selectedZone,
+          zone: isSpecialSummon ? undefined : selectedZone,
         });
         if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
         ocgEvents = ocgResult?.events ?? [];
