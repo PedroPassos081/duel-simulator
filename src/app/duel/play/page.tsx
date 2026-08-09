@@ -1204,26 +1204,64 @@ export default function DuelPlayPage() {
 
             {gameState.decision.type === "position" && (
               <>
-                <h2 className="mt-2 text-xl font-black">Escolha a posição</h2>
-                <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                  {gameState.decision.positions.map((position) => (
-                    <button
-                      key={position}
-                      type="button"
-                      onClick={() =>
-                        sendAction({ type: "ocg_decision", position })
-                      }
-                      disabled={acting}
-                      className="rounded-lg border border-edison-gold/25 bg-edison-gold/10 px-4 py-3 text-xs font-black transition hover:bg-edison-gold/20 disabled:opacity-40"
-                    >
-                      {{
-                        1: "Ataque com a face para cima",
-                        2: "Ataque com a face para baixo",
-                        4: "Defesa com a face para cima",
-                        8: "Defesa com a face para baixo",
-                      }[position] ?? "Posição"}
-                    </button>
-                  ))}
+                <h2 className="mt-2 text-xl font-black">
+                  Escolha como invocar
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  Clique na posição visual desejada para continuar.
+                </p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {gameState.decision.positions.map((position) => {
+                    const defensePosition = position === 4 || position === 8;
+                    const faceDownPosition = position === 2 || position === 8;
+                    const positionLabel = defensePosition ? "Defesa" : "Ataque";
+
+                    return (
+                      <button
+                        key={position}
+                        type="button"
+                        onClick={() =>
+                          sendAction({ type: "ocg_decision", position })
+                        }
+                        disabled={acting}
+                        title={`Invocar em posição de ${positionLabel.toLowerCase()}`}
+                        className="group flex min-h-56 flex-col items-center justify-center rounded-xl border border-edison-gold/25 bg-edison-gold/[0.07] p-4 transition duration-200 hover:border-edison-gold/70 hover:bg-edison-gold/15 hover:shadow-[0_0_28px_rgba(208,168,89,0.18)] disabled:opacity-40"
+                      >
+                        <div className="flex h-44 w-full items-center justify-center">
+                          <div
+                            className={`relative h-40 aspect-[421/614] overflow-hidden rounded border border-edison-gold/65 bg-black shadow-xl transition duration-200 group-hover:scale-105 ${defensePosition ? "rotate-90" : ""}`}
+                          >
+                            {faceDownPosition ? (
+                              <Image
+                                src="/assets/master-duelist-card-back.svg"
+                                alt={`${positionLabel} com a carta virada para baixo`}
+                                fill
+                                sizes="112px"
+                                className="object-cover"
+                                unoptimized
+                              />
+                            ) : gameState.decision.card?.imageUrl ? (
+                              <Image
+                                src={gameState.decision.card.imageUrl}
+                                alt={`${gameState.decision.card.name} em posição de ${positionLabel.toLowerCase()}`}
+                                fill
+                                sizes="112px"
+                                className="object-cover"
+                                unoptimized
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center bg-white/5 px-2 text-center text-[10px] font-bold text-white/55">
+                                {gameState.decision.card?.name ?? "Monstro"}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <span className="mt-2 rounded-full border border-white/10 bg-black/35 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-edison-gold">
+                          {positionLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}
