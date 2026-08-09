@@ -106,7 +106,7 @@ export default function RegisterPage() {
         <div className="mb-7 text-center">
           <Image
             src="/icon.png"
-            alt="Logo do Duel Simulator"
+            alt="Emblema Master Duelist"
             width={128}
             height={128}
             priority
@@ -117,7 +117,7 @@ export default function RegisterPage() {
           </h1>
           <p className="mt-2 text-sm text-gray-400">
             {step === "register"
-              ? "Comece agora no Edison Duel Simulator"
+              ? "Comece agora no Master Duelist"
               : `Digite o código de 6 dígitos enviado para ${email}`}
           </p>
         </div>
