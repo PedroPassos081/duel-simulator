@@ -31,11 +31,6 @@ const actionSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-function isMonster(type: string) {
-  const normalized = type.toLowerCase();
-  return !normalized.includes("spell") && !normalized.includes("trap");
-}
-
 function nextPhase(current: string, turn: number) {
   if (current === "draw") return "standby";
   if (current === "standby") return "main1";
@@ -45,18 +40,14 @@ function nextPhase(current: string, turn: number) {
   return null;
 }
 
-function startNextTurn(
-  state: DuelGameState,
-  playerIds: string[]
-): { state: DuelGameState; phase: string } {
-  const nextPlayerId = playerIds.find((id) => id !== state.turnPlayerId)!;
-  const nextPlayer = state.players[nextPlayerId];
-  const drawn = nextPlayer.deck.shift();
-  if (drawn) nextPlayer.hand.push(drawn);
-  nextPlayer.normalSummoned = false;
-  state.turnPlayerId = nextPlayerId;
-  state.turn += 1;
-  return { state, phase: "draw" };
+function phaseFromOcg(value: number) {
+  if (value === 1) return "draw";
+  if (value === 2) return "standby";
+  if (value === 4) return "main1";
+  if ([8, 16, 32, 64, 128].includes(value)) return "battle";
+  if (value === 256) return "main2";
+  if (value === 512) return "end";
+  return null;
 }
 
 function removeCardFromLocation(
@@ -84,10 +75,14 @@ function removeCardFromLocation(
   } else if (location === 64) {
     const index = player.extra.indexOf(cardId);
     if (index >= 0) player.extra.splice(index, 1);
+  } else if (location === 32) {
+    const index = player.banished?.indexOf(cardId) ?? -1;
+    if (index >= 0) player.banished.splice(index, 1);
   }
 }
 
 function applyOcgEvents(state: DuelGameState, events: OcgStateEvent[]) {
+  let phase: string | null = null;
   for (const event of events) {
     if (event.type === "draw") {
       const player = state.players[event.playerId];
@@ -96,6 +91,54 @@ function applyOcgEvents(state: DuelGameState, events: OcgStateEvent[]) {
         removeCardFromLocation(player, 1, cardId, 0);
         player.hand.push(cardId);
       }
+      continue;
+    }
+
+    if (event.type === "position") {
+      const player = state.players[event.playerId];
+      if (!player) continue;
+      const list = event.location === 4 ? player.monsters : player.spellTraps;
+      const card = list.find((entry) => entry.zone === event.sequence);
+      if (card) {
+        card.position =
+          event.position === 8
+            ? "face_down_defense"
+            : event.position === 4
+              ? "face_up_defense"
+              : event.position === 1
+                ? "face_up_attack"
+                : "face_down";
+      }
+      continue;
+    }
+
+    if (event.type === "life_points") {
+      const player = state.players[event.playerId];
+      if (!player) continue;
+      const current = player.lifePoints ?? 8_000;
+      player.lifePoints = Math.max(
+        0,
+        event.absolute ? event.value : current + event.value
+      );
+      continue;
+    }
+
+    if (event.type === "turn") {
+      if (state.turnPlayerId !== event.playerId) state.turn += 1;
+      state.turnPlayerId = event.playerId;
+      const player = state.players[event.playerId];
+      if (player) player.normalSummoned = false;
+      continue;
+    }
+
+    if (event.type === "phase") {
+      phase = phaseFromOcg(event.phase) ?? phase;
+      continue;
+    }
+
+    if (event.type === "win") {
+      state.winnerId = event.playerId;
+      state.winReason = event.reason;
       continue;
     }
 
@@ -112,6 +155,13 @@ function applyOcgEvents(state: DuelGameState, events: OcgStateEvent[]) {
       toPlayer.hand.push(event.cardId);
     } else if (event.to.location === 16) {
       toPlayer.graveyard.push(event.cardId);
+    } else if (event.to.location === 32) {
+      toPlayer.banished ??= [];
+      toPlayer.banished.push(event.cardId);
+    } else if (event.to.location === 1) {
+      toPlayer.deck.push(event.cardId);
+    } else if (event.to.location === 64) {
+      toPlayer.extra.push(event.cardId);
     } else if (event.to.location === 4) {
       toPlayer.monsters.push({
         cardId: event.cardId,
@@ -131,6 +181,46 @@ function applyOcgEvents(state: DuelGameState, events: OcgStateEvent[]) {
       });
     }
   }
+  return phase;
+}
+
+async function persistDuelState(
+  matchId: string,
+  state: DuelGameState,
+  phase?: string | null
+) {
+  if (!state.winnerId) {
+    await prisma.match.update({
+      where: { id: matchId },
+      data: {
+        engineState: state,
+        currentTurn: state.turn,
+        ...(phase ? { currentPhase: phase } : {}),
+      },
+    });
+    return;
+  }
+
+  await prisma.$transaction([
+    prisma.match.update({
+      where: { id: matchId },
+      data: {
+        status: "finished",
+        finishedAt: new Date(),
+        engineState: state,
+        currentTurn: state.turn,
+        currentPhase: "finished",
+      },
+    }),
+    prisma.matchPlayer.updateMany({
+      where: { matchId, userId: state.winnerId },
+      data: { result: "win" },
+    }),
+    prisma.matchPlayer.updateMany({
+      where: { matchId, userId: { not: state.winnerId } },
+      data: { result: "loss" },
+    }),
+  ]);
 }
 
 export async function POST(
@@ -169,8 +259,14 @@ export async function POST(
 
     const link = state.chain.links[state.chain.links.length - 1];
     const ocgResult = await passOcgChain(room.id, userId);
+    if (!ocgResult) {
+      return NextResponse.json(
+        { error: "A sessão do OCGCore não está aguardando essa resposta." },
+        { status: 409 }
+      );
+    }
     const ocgEvents = ocgResult?.events ?? [];
-    applyOcgEvents(state, ocgEvents);
+    const resolvedPhase = applyOcgEvents(state, ocgEvents);
     const controller = state.players[link.playerId];
     const card = await prisma.card.findUnique({ where: { id: link.cardId } });
     if (!card) {
@@ -194,10 +290,7 @@ export async function POST(
     }
     delete state.chain;
 
-    await prisma.match.update({
-      where: { id: room.id },
-      data: { engineState: state },
-    });
+    await persistDuelState(room.id, state, resolvedPhase);
     return NextResponse.json({ ok: true, chainResolved: true });
   }
 
@@ -238,11 +331,14 @@ export async function POST(
     }
     if (parsed.data.phase === "battle" || parsed.data.phase === "main2") {
       try {
-        await performOcgPhaseChange(
+        const ocgResult = await performOcgPhaseChange(
           room.id,
           userId,
           parsed.data.phase
         );
+        if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
+        const corePhase = applyOcgEvents(state, ocgResult?.events ?? []);
+        if (corePhase) phase = corePhase;
       } catch (error) {
         return NextResponse.json(
           {
@@ -264,7 +360,10 @@ export async function POST(
       );
     }
     try {
-      await performOcgEndTurn(room.id, userId);
+      const ocgResult = await performOcgEndTurn(room.id, userId);
+      if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
+      const corePhase = applyOcgEvents(state, ocgResult?.events ?? []);
+      phase = corePhase ?? "draw";
     } catch (error) {
       return NextResponse.json(
         {
@@ -276,14 +375,11 @@ export async function POST(
         { status: 409 }
       );
     }
-    phase = startNextTurn(
-      state,
-      room.players.map((entry) => entry.userId)
-    ).phase;
   } else {
     const selectedZone =
       "zone" in parsed.data ? parsed.data.zone : -1;
     let ocgAwaitingPlayerId: string | null = null;
+    let ocgEvents: OcgStateEvent[] = [];
     if (!["main1", "main2"].includes(phase)) {
       return NextResponse.json(
         { error: "Esta ação só pode ser feita em uma Main Phase." },
@@ -309,13 +405,15 @@ export async function POST(
       parsed.data.type === "set_monster"
     ) {
       try {
-        await performOcgMonsterAction({
+        const ocgResult = await performOcgMonsterAction({
           matchId: room.id,
           userId,
           action: parsed.data.type,
           cardId: parsed.data.cardId,
           zone: selectedZone,
         });
+        if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
+        ocgEvents = ocgResult?.events ?? [];
       } catch (error) {
         return NextResponse.json(
           {
@@ -354,7 +452,9 @@ export async function POST(
           zone: selectedZone,
           fieldSpell,
         });
+        if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
         ocgAwaitingPlayerId = ocgResult?.pendingPlayerId ?? null;
+        ocgEvents = ocgResult?.events ?? [];
       } catch (error) {
         return NextResponse.json(
           {
@@ -368,80 +468,19 @@ export async function POST(
       }
     }
 
-    if (
-      parsed.data.type === "set_spell_trap" ||
-      parsed.data.type === "activate"
-    ) {
-      const normalizedType = card.type.toLowerCase();
-      const zoneOccupied = player.spellTraps.some(
-        (entry) => entry.zone === selectedZone
-      );
-      if (
-        isMonster(card.type) ||
-        player.spellTraps.filter((entry) => entry.zone < 5).length >= 5 ||
-        zoneOccupied ||
-        (parsed.data.type === "activate" && !normalizedType.includes("spell"))
-      ) {
-        return NextResponse.json(
-          { error: "Não é possível colocar esta carta nesta zona." },
-          { status: 409 }
-        );
-      }
-      player.spellTraps.push({
-        cardId: card.id,
-        zone: selectedZone,
-        position:
-          parsed.data.type === "activate" ? "face_up_attack" : "face_down",
-      });
-      if (parsed.data.type === "activate") {
-        const opponentId = room.players.find(
-          (entry) => entry.userId !== userId
-        )!.userId;
-        state.chain = {
-          links: [{ playerId: userId, cardId: card.id }],
-          awaitingPlayerId: ocgAwaitingPlayerId ?? opponentId,
-        };
-      }
-    } else {
-      const zoneOccupied = player.monsters.some(
-        (entry) => entry.zone === selectedZone
-      );
-      if (
-        !isMonster(card.type) ||
-        player.monsters.length >= 5 ||
-        zoneOccupied
-      ) {
-        return NextResponse.json(
-          { error: "Não é possível colocar este monstro no campo." },
-          { status: 409 }
-        );
-      }
-      if (player.normalSummoned) {
-        return NextResponse.json(
-          { error: "Você já fez sua invocação normal neste turno." },
-          { status: 409 }
-        );
-      }
-      player.normalSummoned = true;
-      player.monsters.push({
-        cardId: card.id,
-        zone: selectedZone,
-        position:
-          parsed.data.type === "summon"
-            ? "face_up_attack"
-            : "face_down_defense",
-      });
+    const corePhase = applyOcgEvents(state, ocgEvents);
+    if (corePhase) phase = corePhase;
+    if (parsed.data.type === "activate") {
+      const opponentId = room.players.find(
+        (entry) => entry.userId !== userId
+      )!.userId;
+      state.chain = {
+        links: [{ playerId: userId, cardId: card.id }],
+        awaitingPlayerId: ocgAwaitingPlayerId ?? opponentId,
+      };
     }
-    player.hand.splice(handIndex, 1);
   }
 
-  await prisma.match.update({
-    where: { id: room.id },
-    data: {
-      engineState: state,
-      currentTurn: state.turn,
-      currentPhase: phase,
-    },
-  });
+  await persistDuelState(room.id, state, phase);
   return NextResponse.json({ ok: true, currentTurn: state.turn, currentPhase: phase });
 }
