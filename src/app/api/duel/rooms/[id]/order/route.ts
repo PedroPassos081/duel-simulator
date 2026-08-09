@@ -78,6 +78,8 @@ export async function POST(
       monsters: [],
       spellTraps: [],
       graveyard: [],
+      banished: [],
+      lifePoints: 8_000,
       normalSummoned: false,
     };
   }
