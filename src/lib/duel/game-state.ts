@@ -15,6 +15,8 @@ export type DuelPlayerState = {
   monsters: FieldCardState[];
   spellTraps: FieldCardState[];
   graveyard: number[];
+  banished: number[];
+  lifePoints: number;
   normalSummoned: boolean;
 };
 
@@ -31,6 +33,8 @@ export type DuelGameState = {
   turnPlayerId: string;
   turn: number;
   chain?: DuelChainState;
+  winnerId?: string;
+  winReason?: number;
 };
 
 export function isDuelGameState(value: unknown): value is DuelGameState {
