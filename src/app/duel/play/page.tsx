@@ -144,13 +144,16 @@ const PHASE_KEYS: Record<string, string> = {
 function CardBack({ small = false }: { small?: boolean }) {
   return (
     <div
-      className={`${small ? "h-[clamp(68px,9vh,88px)] aspect-[421/614]" : "h-[clamp(96px,14.5vh,142px)] aspect-[0.72]"} rounded border border-violet-300/50 bg-[#14101c] p-1 shadow-lg`}
+      className={`relative ${small ? "h-[clamp(68px,9vh,88px)] aspect-[2/3]" : "h-[clamp(96px,14.5vh,142px)] aspect-[2/3]"} overflow-hidden rounded border border-edison-gold/65 bg-black shadow-[0_0_14px_rgba(208,168,89,0.22)]`}
     >
-      <div className="flex h-full items-center justify-center rounded-sm border border-fuchsia-500/30 bg-[repeating-radial-gradient(ellipse_at_center,#5b214f_0,#25122d_18%,#0b0810_35%)]">
-        <span className="-rotate-12 text-[9px] font-black tracking-tighter text-fuchsia-300/70">
-          EDS
-        </span>
-      </div>
+      <Image
+        src="/assets/master-duelist-card-back.svg"
+        alt="Verso Master Duelist"
+        fill
+        sizes={small ? "64px" : "104px"}
+        className="object-cover"
+        unoptimized
+      />
     </div>
   );
 }
