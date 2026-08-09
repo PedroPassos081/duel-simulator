@@ -279,6 +279,7 @@ export async function POST(
         cardIndices: parsed.data.cardIndices,
         position: parsed.data.position,
         placeIndices: parsed.data.placeIndices,
+        preserveOptionalChain: Boolean(state.chain),
       });
       if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
       const resolvedPhase = applyOcgEvents(state, ocgResult.events ?? []);
