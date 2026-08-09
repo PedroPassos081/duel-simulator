@@ -19,6 +19,12 @@ const MESSAGE_SELECT_IDLECMD = 11;
 const MESSAGE_SELECT_BATTLECMD = 10;
 const MESSAGE_SELECT_CHAIN = 16;
 const MESSAGE_SELECT_PLACE = 18;
+const MESSAGE_SELECT_EFFECT_YN = 12;
+const MESSAGE_SELECT_YES_NO = 13;
+const MESSAGE_SELECT_OPTION = 14;
+const MESSAGE_SELECT_CARD = 15;
+const MESSAGE_SELECT_POSITION = 19;
+const MESSAGE_SELECT_TRIBUTE = 20;
 const MESSAGE_WIN = 5;
 const MESSAGE_NEW_TURN = 40;
 const MESSAGE_NEW_PHASE = 41;
@@ -26,6 +32,12 @@ const RESPONSE_SELECT_IDLECMD = 1;
 const RESPONSE_SELECT_BATTLECMD = 0;
 const RESPONSE_SELECT_CHAIN = 8;
 const RESPONSE_SELECT_PLACE = 10;
+const RESPONSE_SELECT_EFFECT_YN = 2;
+const RESPONSE_SELECT_YES_NO = 3;
+const RESPONSE_SELECT_OPTION = 4;
+const RESPONSE_SELECT_CARD = 5;
+const RESPONSE_SELECT_POSITION = 11;
+const RESPONSE_SELECT_TRIBUTE = 12;
 const IDLE_SUMMON = 0;
 const IDLE_MONSTER_SET = 3;
 const IDLE_SPELL_SET = 4;
@@ -90,6 +102,29 @@ export type OcgStateEvent =
   | { type: "turn"; playerId: string }
   | { type: "phase"; phase: number }
   | { type: "win"; playerId: string; reason: number };
+
+export type OcgPendingDecision =
+  | {
+      type: "yes_no";
+      source: "effect" | "generic";
+      cardId?: number;
+      description: string;
+    }
+  | { type: "option"; options: string[] }
+  | {
+      type: "cards" | "tributes";
+      min: number;
+      max: number;
+      canCancel: boolean;
+      candidates: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+      }>;
+    }
+  | { type: "position"; cardId: number; positions: number[] };
 
 declare global {
   // eslint-disable-next-line no-var
@@ -423,6 +458,206 @@ export function getOcgLegalActions(matchId: string, userId: string) {
     add("selects", "activate");
   }
   return actions;
+}
+
+function pendingCards(message: Record<string, unknown>) {
+  const cards = Array.isArray(message.selects)
+    ? (message.selects as Array<Record<string, unknown>>)
+    : [];
+  return cards.flatMap((card, index) => {
+    if (
+      typeof card.code !== "number" ||
+      typeof card.controller !== "number" ||
+      typeof card.location !== "number" ||
+      typeof card.sequence !== "number"
+    ) {
+      return [];
+    }
+    return [{
+      index,
+      cardId: card.code,
+      controller: card.controller,
+      location: card.location,
+      sequence: card.sequence,
+    }];
+  });
+}
+
+export function getOcgPendingDecision(
+  matchId: string,
+  userId: string
+): OcgPendingDecision | null {
+  const session = sessions.get(matchId);
+  const pending = session ? getPendingMessage(session) : null;
+  if (!session || !pending || session.players[Number(pending.player)] !== userId) {
+    return null;
+  }
+
+  if (
+    pending.type === MESSAGE_SELECT_EFFECT_YN ||
+    pending.type === MESSAGE_SELECT_YES_NO
+  ) {
+    return {
+      type: "yes_no",
+      source:
+        pending.type === MESSAGE_SELECT_EFFECT_YN ? "effect" : "generic",
+      ...(typeof pending.code === "number" ? { cardId: pending.code } : {}),
+      description:
+        typeof pending.description === "bigint"
+          ? pending.description.toString()
+          : "",
+    };
+  }
+
+  if (pending.type === MESSAGE_SELECT_OPTION) {
+    const options = Array.isArray(pending.options) ? pending.options : [];
+    return {
+      type: "option",
+      options: options.map((option) => String(option)),
+    };
+  }
+
+  if (
+    pending.type === MESSAGE_SELECT_CARD ||
+    pending.type === MESSAGE_SELECT_TRIBUTE
+  ) {
+    return {
+      type:
+        pending.type === MESSAGE_SELECT_TRIBUTE ? "tributes" : "cards",
+      min: typeof pending.min === "number" ? pending.min : 1,
+      max: typeof pending.max === "number" ? pending.max : 1,
+      canCancel: pending.can_cancel === true,
+      candidates: pendingCards(pending).map((card) => ({
+        index: card.index,
+        cardId: card.cardId,
+        controllerId: session.players[card.controller],
+        location: card.location,
+        sequence: card.sequence,
+      })),
+    };
+  }
+
+  if (
+    pending.type === MESSAGE_SELECT_POSITION &&
+    typeof pending.code === "number" &&
+    typeof pending.positions === "number"
+  ) {
+    const positionMask = pending.positions;
+    return {
+      type: "position",
+      cardId: pending.code,
+      positions: [1, 2, 4, 8].filter(
+        (position) => (positionMask & position) !== 0
+      ),
+    };
+  }
+
+  return null;
+}
+
+export async function performOcgDecision(input: {
+  matchId: string;
+  userId: string;
+  yes?: boolean;
+  optionIndex?: number;
+  cardIndices?: number[] | null;
+  position?: number;
+}) {
+  const session = sessions.get(input.matchId);
+  if (!session) return null;
+  if (session.busy) throw new Error("O motor já está processando outra ação.");
+  const pending = getPendingMessage(session);
+  if (!pending || session.players[Number(pending.player)] !== input.userId) {
+    throw new Error("O OCGCore não está aguardando uma decisão sua.");
+  }
+
+  let response: Record<string, unknown>;
+  if (
+    pending.type === MESSAGE_SELECT_EFFECT_YN ||
+    pending.type === MESSAGE_SELECT_YES_NO
+  ) {
+    if (typeof input.yes !== "boolean") {
+      throw new Error("Escolha Sim ou Não.");
+    }
+    response = {
+      type:
+        pending.type === MESSAGE_SELECT_EFFECT_YN
+          ? RESPONSE_SELECT_EFFECT_YN
+          : RESPONSE_SELECT_YES_NO,
+      yes: input.yes,
+    };
+  } else if (pending.type === MESSAGE_SELECT_OPTION) {
+    const options = Array.isArray(pending.options) ? pending.options : [];
+    if (
+      !Number.isInteger(input.optionIndex) ||
+      input.optionIndex! < 0 ||
+      input.optionIndex! >= options.length
+    ) {
+      throw new Error("Escolha uma opção válida.");
+    }
+    response = { type: RESPONSE_SELECT_OPTION, index: input.optionIndex };
+  } else if (
+    pending.type === MESSAGE_SELECT_CARD ||
+    pending.type === MESSAGE_SELECT_TRIBUTE
+  ) {
+    const cards = pendingCards(pending);
+    const indicies = input.cardIndices ?? null;
+    if (indicies === null) {
+      if (pending.can_cancel !== true) {
+        throw new Error("Esta escolha não pode ser cancelada.");
+      }
+    } else {
+      const unique = new Set(indicies);
+      const min = typeof pending.min === "number" ? pending.min : 1;
+      const max = typeof pending.max === "number" ? pending.max : 1;
+      if (
+        unique.size !== indicies.length ||
+        indicies.length < min ||
+        indicies.length > max ||
+        indicies.some(
+          (index) => !Number.isInteger(index) || index < 0 || index >= cards.length
+        )
+      ) {
+        throw new Error(`Selecione entre ${min} e ${max} carta(s).`);
+      }
+    }
+    response = {
+      type:
+        pending.type === MESSAGE_SELECT_TRIBUTE
+          ? RESPONSE_SELECT_TRIBUTE
+          : RESPONSE_SELECT_CARD,
+      indicies,
+    };
+  } else if (pending.type === MESSAGE_SELECT_POSITION) {
+    if (
+      !Number.isInteger(input.position) ||
+      ![1, 2, 4, 8].includes(input.position!) ||
+      typeof pending.positions !== "number" ||
+      (pending.positions & input.position!) === 0
+    ) {
+      throw new Error("Escolha uma posição válida.");
+    }
+    response = {
+      type: RESPONSE_SELECT_POSITION,
+      position: input.position,
+    };
+  } else {
+    throw new Error("Esta decisão do OCGCore ainda não é suportada.");
+  }
+
+  session.busy = true;
+  try {
+    const core = await loadOcgCore();
+    const eventStart = session.messages.length;
+    core.duelSetResponse(session.handle, response as never);
+    await processUntilDecision(core, session, false);
+    return {
+      ...getOcgDuelSessionSnapshot(input.matchId),
+      events: stateEventsSince(session, eventStart),
+    };
+  } finally {
+    session.busy = false;
+  }
 }
 
 export async function performOcgMonsterAction(input: {
