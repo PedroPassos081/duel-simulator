@@ -46,21 +46,13 @@ function LoginForm() {
       <section className="w-full max-w-md rounded-2xl border border-edison-border bg-edison-panel/90 p-6 shadow-2xl shadow-black/30 backdrop-blur sm:p-8">
         <div className="mb-7 text-center">
           <Image
-            src="/icon.png"
+            src="/public/logo_with_name.png"
             alt="Logo Master Duelist"
             width={128}
             height={128}
             priority
             className="mx-auto mb-2 h-28 w-28 object-contain drop-shadow-[0_0_24px_rgba(212,175,55,0.28)]"
           />
-          <div className="mb-5 leading-none">
-            <p className="text-3xl font-black uppercase tracking-[0.14em] text-edison-gold drop-shadow-[0_2px_10px_rgba(212,175,55,0.28)]">
-              Master
-            </p>
-            <p className="mt-1 text-xl font-semibold uppercase tracking-[0.32em] text-gray-100">
-              Duelist
-            </p>
-          </div>
           <h1 className="text-2xl font-semibold tracking-tight">
             Bem-vindo de volta
           </h1>
