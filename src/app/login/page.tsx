@@ -46,7 +46,7 @@ function LoginForm() {
       <section className="w-full max-w-md rounded-2xl border border-edison-border bg-edison-panel/90 p-6 shadow-2xl shadow-black/30 backdrop-blur sm:p-8">
         <div className="mb-7 text-center">
           <Image
-            src="/public/logo_with_name.png"
+            src="/logo_with_name.png"
             alt="Logo Master Duelist"
             width={128}
             height={128}

@@ -51,9 +51,10 @@ export default function RegisterPage() {
     setEmail((data.email ?? email).toLowerCase());
     setStep("verify");
     setMessage(
-      res.ok
-        ? "Enviamos um código de 6 dígitos para o seu e-mail."
-        : data.error
+      data.message ??
+        (res.ok
+          ? "Enviamos um código de 6 dígitos para o seu e-mail."
+          : data.error)
     );
   }
 

@@ -432,7 +432,7 @@ export async function POST(
       );
     }
 
-    const link = state.chain.links[state.chain.links.length - 1];
+    const links = state.chain.links;
     const respondingPlayerId = state.chain.awaitingPlayerId;
     const ocgResult = await passOcgChain(room.id, respondingPlayerId);
     if (!ocgResult) {
@@ -452,26 +452,26 @@ export async function POST(
       await persistDuelState(room.id, state, resolvedPhase);
       return NextResponse.json({ ok: true, chainStatus });
     }
-    const controller = state.players[link.playerId];
-    const card = await prisma.card.findUnique({ where: { id: link.cardId } });
-    if (!card) {
-      return NextResponse.json({ error: "Carta não encontrada." }, { status: 404 });
-    }
-    const persistent = ["continuous", "field", "equip"].some((kind) =>
-      card.type.toLowerCase().includes(kind)
-    );
-    const movedByCore = ocgEvents.some(
-      (event) =>
-        event.type === "move" &&
-        event.cardId === link.cardId &&
-        event.to.location === 16
-    );
-    if (!persistent && !movedByCore) {
-      const fieldIndex = controller.spellTraps.findIndex(
-        (entry) => entry.cardId === link.cardId
+    for (const link of links) {
+      const controller = state.players[link.playerId];
+      const card = await prisma.card.findUnique({ where: { id: link.cardId } });
+      if (!card) continue;
+      const persistent = ["continuous", "field", "equip"].some((kind) =>
+        card.type.toLowerCase().includes(kind)
       );
-      if (fieldIndex >= 0) controller.spellTraps.splice(fieldIndex, 1);
-      controller.graveyard.push(link.cardId);
+      const movedByCore = ocgEvents.some(
+        (event) =>
+          event.type === "move" &&
+          event.cardId === link.cardId &&
+          event.to.location === 16
+      );
+      if (!persistent && !movedByCore) {
+        const fieldIndex = controller.spellTraps.findIndex(
+          (entry) => entry.cardId === link.cardId
+        );
+        if (fieldIndex >= 0) controller.spellTraps.splice(fieldIndex, 1);
+        controller.graveyard.push(link.cardId);
+      }
     }
     await persistDuelState(room.id, state, resolvedPhase);
     return NextResponse.json({ ok: true, chainResolved: true });
