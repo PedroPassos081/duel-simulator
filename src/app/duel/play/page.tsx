@@ -116,6 +116,53 @@ type OcgDecision =
         location: number;
         sequence: number;
       }>;
+    }
+  | {
+      type: "sum";
+      target: number;
+      min: number;
+      max: number;
+      mustCards: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        amount: number;
+        card: Card | null;
+      }>;
+      candidates: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        amount: number;
+        card: Card | null;
+      }>;
+    }
+  | {
+      type: "unselect";
+      canFinish: boolean;
+      canCancel: boolean;
+      min: number;
+      max: number;
+      selectable: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        card: Card | null;
+      }>;
+      selected: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        card: Card | null;
+      }>;
     };
 
 type DuelCardAction =
@@ -906,7 +953,11 @@ export default function DuelPlayPage() {
       ? `${gameState.decision.type}:${gameState.decision.candidates
           .map((candidate) => candidate.index)
           .join(",")}:${gameState.decision.min}:${gameState.decision.max}`
-      : `${gameState.decision.type}:${"cardId" in gameState.decision ? gameState.decision.cardId ?? "" : ""}`
+      : gameState.decision.type === "sum"
+        ? `sum:${gameState.decision.candidates.map((candidate) => candidate.index).join(",")}`
+        : gameState.decision.type === "unselect"
+          ? `unselect:${gameState.decision.selectable.map((candidate) => candidate.index).join(",")}:${gameState.decision.selected.map((candidate) => candidate.index).join(",")}`
+          : `${gameState.decision.type}:${"cardId" in gameState.decision ? gameState.decision.cardId ?? "" : ""}`
     : "";
 
   useEffect(() => {
@@ -969,6 +1020,8 @@ export default function DuelPlayPage() {
           cardIndices?: number[] | null;
           position?: number;
           placeIndices?: number[];
+          toggleIndex?: number | null;
+          finishSelection?: boolean;
         }
       | {
           type: "summon" | "set_monster" | "activate";
@@ -1282,6 +1335,250 @@ export default function DuelPlayPage() {
                       type="button"
                       onClick={() =>
                         sendAction({ type: "ocg_decision", cardIndices: null })
+                      }
+                      disabled={acting}
+                      className="rounded-lg border border-white/15 bg-white/5 px-6 py-2.5 text-xs font-black disabled:opacity-40"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {gameState.decision.type === "sum" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  Escolha os materiais
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  A soma dos níveis selecionados precisa ser {gameState.decision.target}.
+                </p>
+                {gameState.decision.mustCards.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">
+                      Incluído automaticamente
+                    </p>
+                    <div className="mt-2 flex flex-wrap justify-center gap-3">
+                      {gameState.decision.mustCards.map((candidate) => (
+                        <div
+                          key={`must-${candidate.index}-${candidate.cardId}`}
+                          className="w-24 rounded-lg border border-edison-gold/60 bg-edison-gold/10 p-2"
+                        >
+                          <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                            {candidate.card?.imageUrl ? (
+                              <Image
+                                src={candidate.card.imageUrl}
+                                alt={candidate.card.name}
+                                fill
+                                sizes="96px"
+                                className="object-cover"
+                                unoptimized
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                                Carta
+                              </div>
+                            )}
+                          </div>
+                          <span className="mt-1.5 block truncate text-[9px] font-bold">
+                            {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                          </span>
+                          <span className="block text-[9px] text-edison-gold">
+                            Nível {candidate.amount}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="mt-4 flex max-h-[40vh] flex-wrap justify-center gap-3 overflow-y-auto p-1">
+                  {gameState.decision.candidates.map((candidate) => {
+                    const selected = selectedDecisionIndices.includes(candidate.index);
+                    return (
+                      <button
+                        key={`${candidate.index}-${candidate.cardId}`}
+                        type="button"
+                        onClick={() =>
+                          setSelectedDecisionIndices((current) =>
+                            current.includes(candidate.index)
+                              ? current.filter((index) => index !== candidate.index)
+                              : [...current, candidate.index]
+                          )
+                        }
+                        className={`w-24 rounded-lg border p-2 transition ${
+                          selected
+                            ? "border-edison-gold bg-edison-gold/20 ring-2 ring-edison-gold/35"
+                            : "border-white/10 bg-white/5 hover:border-white/30"
+                        }`}
+                      >
+                        <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                          {candidate.card?.imageUrl ? (
+                            <Image
+                              src={candidate.card.imageUrl}
+                              alt={candidate.card.name}
+                              fill
+                              sizes="96px"
+                              className="object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                              Carta
+                            </div>
+                          )}
+                        </div>
+                        <span className="mt-1.5 block truncate text-[9px] font-bold">
+                          {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                        </span>
+                        <span className="block text-[9px] text-edison-gold">
+                          Nível {candidate.amount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {(() => {
+                  const decision = gameState.decision;
+                  if (decision.type !== "sum") return null;
+                  const mustTotal = decision.mustCards.reduce(
+                    (total, card) => total + card.amount,
+                    0
+                  );
+                  const selectedTotal = selectedDecisionIndices.reduce(
+                    (total, index) =>
+                      total + (decision.candidates[index]?.amount ?? 0),
+                    0
+                  );
+                  const currentTotal = mustTotal + selectedTotal;
+                  const validCount =
+                    selectedDecisionIndices.length >= decision.min &&
+                    selectedDecisionIndices.length <= decision.max;
+                  return (
+                    <>
+                      <p className="mt-3 text-xs text-white/60">
+                        Total selecionado: {currentTotal} / {decision.target}
+                      </p>
+                      <div className="mt-3 flex justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            sendAction({
+                              type: "ocg_decision",
+                              cardIndices: selectedDecisionIndices,
+                            })
+                          }
+                          disabled={
+                            acting || !validCount || currentTotal !== decision.target
+                          }
+                          className="rounded-lg bg-edison-gold px-6 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                        >
+                          Confirmar ({selectedDecisionIndices.length})
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+
+            {gameState.decision.type === "unselect" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  Escolha os materiais
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  Selecione entre {gameState.decision.min} e {gameState.decision.max} carta(s).
+                </p>
+                <div className="mt-4 flex max-h-[40vh] flex-wrap justify-center gap-3 overflow-y-auto p-1">
+                  {gameState.decision.selected.map((candidate) => (
+                    <button
+                      key={`selected-${candidate.index}-${candidate.cardId}`}
+                      type="button"
+                      onClick={() =>
+                        sendAction({
+                          type: "ocg_decision",
+                          toggleIndex: candidate.index,
+                        })
+                      }
+                      disabled={acting}
+                      className="w-24 rounded-lg border border-edison-gold bg-edison-gold/20 p-2 ring-2 ring-edison-gold/35 transition disabled:opacity-40"
+                    >
+                      <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                        {candidate.card?.imageUrl ? (
+                          <Image
+                            src={candidate.card.imageUrl}
+                            alt={candidate.card.name}
+                            fill
+                            sizes="96px"
+                            className="object-cover"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                            Carta
+                          </div>
+                        )}
+                      </div>
+                      <span className="mt-1.5 block truncate text-[9px] font-bold">
+                        {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                      </span>
+                      <span className="block text-[9px] text-white/50">Remover</span>
+                    </button>
+                  ))}
+                  {gameState.decision.selectable.map((candidate) => (
+                    <button
+                      key={`selectable-${candidate.index}-${candidate.cardId}`}
+                      type="button"
+                      onClick={() =>
+                        sendAction({
+                          type: "ocg_decision",
+                          toggleIndex: candidate.index,
+                        })
+                      }
+                      disabled={acting}
+                      className="w-24 rounded-lg border border-white/10 bg-white/5 p-2 transition hover:border-white/30 disabled:opacity-40"
+                    >
+                      <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                        {candidate.card?.imageUrl ? (
+                          <Image
+                            src={candidate.card.imageUrl}
+                            alt={candidate.card.name}
+                            fill
+                            sizes="96px"
+                            className="object-cover"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                            Carta
+                          </div>
+                        )}
+                      </div>
+                      <span className="mt-1.5 block truncate text-[9px] font-bold">
+                        {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-5 flex justify-center gap-3">
+                  {gameState.decision.canFinish && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", finishSelection: true })
+                      }
+                      disabled={acting}
+                      className="rounded-lg bg-edison-gold px-6 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                    >
+                      Concluir ({gameState.decision.selected.length})
+                    </button>
+                  )}
+                  {gameState.decision.canCancel && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", toggleIndex: null })
                       }
                       disabled={acting}
                       className="rounded-lg border border-white/15 bg-white/5 px-6 py-2.5 text-xs font-black disabled:opacity-40"

@@ -40,6 +40,8 @@ const actionSchema = z.discriminatedUnion("type", [
     cardIndices: z.array(z.number().int().nonnegative()).nullable().optional(),
     position: z.number().int().optional(),
     placeIndices: z.array(z.number().int().nonnegative()).optional(),
+    toggleIndex: z.number().int().nonnegative().nullable().optional(),
+    finishSelection: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("special_summon"),
@@ -331,6 +333,8 @@ export async function POST(
         cardIndices: parsed.data.cardIndices,
         position: parsed.data.position,
         placeIndices: parsed.data.placeIndices,
+        toggleIndex: parsed.data.toggleIndex,
+        finishSelection: parsed.data.finishSelection,
         preserveOptionalChain: Boolean(state.chain || state.pendingChainSource),
         preserveOptionalChainForUserId: state.chain
           ? undefined

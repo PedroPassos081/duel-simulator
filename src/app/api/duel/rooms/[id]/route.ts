@@ -124,11 +124,21 @@ export async function GET(
       pendingDecision.type === "tributes" ||
       pendingDecision.type === "battle_targets"
       ? pendingDecision.candidates.map((candidate) => candidate.cardId)
-      : "cardId" in pendingDecision
-        ? typeof pendingDecision.cardId === "number"
-          ? [pendingDecision.cardId]
-          : []
-        : []
+      : pendingDecision.type === "sum"
+        ? [
+            ...pendingDecision.mustCards.map((candidate) => candidate.cardId),
+            ...pendingDecision.candidates.map((candidate) => candidate.cardId),
+          ]
+        : pendingDecision.type === "unselect"
+          ? [
+              ...pendingDecision.selectable.map((candidate) => candidate.cardId),
+              ...pendingDecision.selected.map((candidate) => candidate.cardId),
+            ]
+          : "cardId" in pendingDecision
+            ? typeof pendingDecision.cardId === "number"
+              ? [pendingDecision.cardId]
+              : []
+            : []
     : [];
   const visibleCardIds = ownState
     ? [
@@ -253,7 +263,31 @@ export async function GET(
                       ...pendingDecision,
                       card: cardById.get(pendingDecision.cardId) ?? null,
                     }
-                  : pendingDecision
+                  : pendingDecision.type === "sum"
+                    ? {
+                        ...pendingDecision,
+                        mustCards: pendingDecision.mustCards.map((candidate) => ({
+                          ...candidate,
+                          card: cardById.get(candidate.cardId) ?? null,
+                        })),
+                        candidates: pendingDecision.candidates.map((candidate) => ({
+                          ...candidate,
+                          card: cardById.get(candidate.cardId) ?? null,
+                        })),
+                      }
+                    : pendingDecision.type === "unselect"
+                      ? {
+                          ...pendingDecision,
+                          selectable: pendingDecision.selectable.map((candidate) => ({
+                            ...candidate,
+                            card: cardById.get(candidate.cardId) ?? null,
+                          })),
+                          selected: pendingDecision.selected.map((candidate) => ({
+                            ...candidate,
+                            card: cardById.get(candidate.cardId) ?? null,
+                          })),
+                        }
+                      : pendingDecision
               : null,
             chain: storedState.chain
               ? {

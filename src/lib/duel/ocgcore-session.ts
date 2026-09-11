@@ -25,6 +25,8 @@ const MESSAGE_SELECT_OPTION = 14;
 const MESSAGE_SELECT_CARD = 15;
 const MESSAGE_SELECT_POSITION = 19;
 const MESSAGE_SELECT_TRIBUTE = 20;
+const MESSAGE_SELECT_SUM = 23;
+const MESSAGE_SELECT_UNSELECT_CARD = 26;
 const MESSAGE_WIN = 5;
 const MESSAGE_NEW_TURN = 40;
 const MESSAGE_NEW_PHASE = 41;
@@ -38,6 +40,8 @@ const RESPONSE_SELECT_OPTION = 4;
 const RESPONSE_SELECT_CARD = 5;
 const RESPONSE_SELECT_POSITION = 11;
 const RESPONSE_SELECT_TRIBUTE = 12;
+const RESPONSE_SELECT_SUM = 14;
+const RESPONSE_SELECT_UNSELECT_CARD = 7;
 const IDLE_SUMMON = 0;
 const IDLE_SPECIAL_SUMMON = 1;
 const IDLE_MONSTER_SET = 3;
@@ -133,6 +137,49 @@ export type OcgPendingDecision =
       count: number;
       places: Array<{
         index: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+      }>;
+    }
+  | {
+      type: "sum";
+      target: number;
+      min: number;
+      max: number;
+      mustCards: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        amount: number;
+      }>;
+      candidates: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        amount: number;
+      }>;
+    }
+  | {
+      type: "unselect";
+      canFinish: boolean;
+      canCancel: boolean;
+      min: number;
+      max: number;
+      selectable: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+      }>;
+      selected: Array<{
+        index: number;
+        cardId: number;
         controllerId: string;
         location: number;
         sequence: number;
@@ -563,6 +610,54 @@ function pendingCards(message: Record<string, unknown>) {
   });
 }
 
+function pendingSumCards(cards: unknown) {
+  const list = Array.isArray(cards) ? (cards as Array<Record<string, unknown>>) : [];
+  return list.flatMap((card, index) => {
+    if (
+      typeof card.code !== "number" ||
+      typeof card.controller !== "number" ||
+      typeof card.location !== "number" ||
+      typeof card.sequence !== "number" ||
+      typeof card.amount !== "number"
+    ) {
+      return [];
+    }
+    return [{
+      index,
+      cardId: card.code,
+      controller: card.controller,
+      location: card.location,
+      sequence: card.sequence,
+      amount: card.amount,
+    }];
+  });
+}
+
+// As cartas de select_cards/unselect_cards da mesma mensagem SELECT_UNSELECT_CARD
+// compartilham um único espaço de índices no protocolo (unselect_cards continua
+// depois de select_cards), por isso o offset é necessário para reconstituir o
+// índice "de fio" que a resposta espera de volta.
+function pendingToggleCards(cards: unknown, indexOffset: number) {
+  const list = Array.isArray(cards) ? (cards as Array<Record<string, unknown>>) : [];
+  return list.flatMap((card, i) => {
+    if (
+      typeof card.code !== "number" ||
+      typeof card.controller !== "number" ||
+      typeof card.location !== "number" ||
+      typeof card.sequence !== "number"
+    ) {
+      return [];
+    }
+    return [{
+      index: indexOffset + i,
+      cardId: card.code,
+      controller: card.controller,
+      location: card.location,
+      sequence: card.sequence,
+    }];
+  });
+}
+
 export function getOcgPendingDecision(
   matchId: string,
   userId: string
@@ -644,6 +739,50 @@ export function getOcgPendingDecision(
     };
   }
 
+  if (pending.type === MESSAGE_SELECT_SUM) {
+    const toCandidate = (card: ReturnType<typeof pendingSumCards>[number]) => ({
+      index: card.index,
+      cardId: card.cardId,
+      controllerId: session.players[card.controller],
+      location: card.location,
+      sequence: card.sequence,
+      amount: card.amount,
+    });
+    return {
+      type: "sum",
+      target: typeof pending.amount === "number" ? pending.amount : 0,
+      min: typeof pending.min === "number" ? pending.min : 0,
+      max: typeof pending.max === "number" ? pending.max : 0,
+      mustCards: pendingSumCards(pending.selects_must).map(toCandidate),
+      candidates: pendingSumCards(pending.selects).map(toCandidate),
+    };
+  }
+
+  if (pending.type === MESSAGE_SELECT_UNSELECT_CARD) {
+    const selectCardsLength = Array.isArray(pending.select_cards)
+      ? pending.select_cards.length
+      : 0;
+    const toCandidate = (card: ReturnType<typeof pendingToggleCards>[number]) => ({
+      index: card.index,
+      cardId: card.cardId,
+      controllerId: session.players[card.controller],
+      location: card.location,
+      sequence: card.sequence,
+    });
+    return {
+      type: "unselect",
+      canFinish: pending.can_finish === true,
+      canCancel: pending.can_cancel === true,
+      min: typeof pending.min === "number" ? pending.min : 0,
+      max: typeof pending.max === "number" ? pending.max : 0,
+      selectable: pendingToggleCards(pending.select_cards, 0).map(toCandidate),
+      selected: pendingToggleCards(
+        pending.unselect_cards,
+        selectCardsLength
+      ).map(toCandidate),
+    };
+  }
+
   return null;
 }
 
@@ -655,6 +794,8 @@ export async function performOcgDecision(input: {
   cardIndices?: number[] | null;
   position?: number;
   placeIndices?: number[];
+  toggleIndex?: number | null;
+  finishSelection?: boolean;
   preserveOptionalChain?: boolean;
   preserveOptionalChainForUserId?: string;
 }) {
@@ -763,6 +904,70 @@ export async function performOcgDecision(input: {
         sequence: places[index].sequence,
       })),
     };
+  } else if (pending.type === MESSAGE_SELECT_SUM) {
+    const mustCards = pendingSumCards(pending.selects_must);
+    const candidates = pendingSumCards(pending.selects);
+    const indicies = input.cardIndices ?? null;
+    if (indicies === null) {
+      throw new Error("Selecione os materiais necessários.");
+    }
+    const unique = new Set(indicies);
+    const min = typeof pending.min === "number" ? pending.min : 0;
+    const max = typeof pending.max === "number" ? pending.max : 0;
+    if (
+      unique.size !== indicies.length ||
+      indicies.length < min ||
+      indicies.length > max ||
+      indicies.some(
+        (index) => !Number.isInteger(index) || index < 0 || index >= candidates.length
+      )
+    ) {
+      throw new Error(`Selecione entre ${min} e ${max} carta(s).`);
+    }
+    const target = typeof pending.amount === "number" ? pending.amount : 0;
+    const mustTotal = mustCards.reduce((total, card) => total + card.amount, 0);
+    const selectedTotal = indicies.reduce(
+      (total, index) => total + candidates[index].amount,
+      0
+    );
+    if (mustTotal + selectedTotal !== target) {
+      throw new Error(
+        "A soma dos níveis/valores selecionados não corresponde ao necessário."
+      );
+    }
+    response = { type: RESPONSE_SELECT_SUM, indicies };
+  } else if (pending.type === MESSAGE_SELECT_UNSELECT_CARD) {
+    const selectCardsLength = Array.isArray(pending.select_cards)
+      ? pending.select_cards.length
+      : 0;
+    const unselectCardsLength = Array.isArray(pending.unselect_cards)
+      ? pending.unselect_cards.length
+      : 0;
+    const total = selectCardsLength + unselectCardsLength;
+
+    if (input.finishSelection === true) {
+      if (pending.can_finish !== true) {
+        throw new Error("Ainda não é possível concluir esta seleção.");
+      }
+      response = { type: RESPONSE_SELECT_UNSELECT_CARD, index: total };
+    } else if (input.toggleIndex === null || input.toggleIndex === undefined) {
+      if (pending.can_cancel !== true) {
+        throw new Error("Esta escolha não pode ser cancelada.");
+      }
+      response = { type: RESPONSE_SELECT_UNSELECT_CARD, index: null };
+    } else {
+      if (
+        !Number.isInteger(input.toggleIndex) ||
+        input.toggleIndex < 0 ||
+        input.toggleIndex >= total
+      ) {
+        throw new Error("Selecione uma carta válida.");
+      }
+      response = {
+        type: RESPONSE_SELECT_UNSELECT_CARD,
+        index: input.toggleIndex,
+      };
+    }
   } else {
     throw new Error("Esta decisão do OCGCore ainda não é suportada.");
   }
