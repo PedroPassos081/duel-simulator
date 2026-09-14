@@ -4,8 +4,8 @@ import { Navbar } from "@/components/Navbar";
 import { ConditionalNavbar } from "@/components/ConditionalNavbar";
 
 export const metadata: Metadata = {
-  title: "Duel Simulator",
-  description: "Deck builder e simulador para o formato Edison — projeto de fã, não afiliado à Konami.",
+  title: "Master Duelist",
+  description: "Master Duelist — deck builder e simulador para o formato Edison. Projeto de fã, não afiliado à Konami.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

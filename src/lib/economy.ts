@@ -1,7 +1,5 @@
 import { prisma } from "@/lib/prisma";
 
-export const MAX_COPIES_PURCHASABLE = 3;
-
 type Currency = "gold" | "cash";
 
 export class EconomyError extends Error {}
@@ -79,9 +77,10 @@ export async function grantMatchRewards(
 }
 
 /**
- * Compra uma carta na loja, validando: moeda permitida, saldo suficiente e
- * limite de MAX_COPIES_PURCHASABLE cópias por carta. Tudo dentro de uma única
- * transação de banco para evitar condição de corrida (double purchase).
+ * Compra uma carta na loja, validando: moeda permitida, saldo suficiente e os
+ * limites (maxTotal/maxGold/maxCash) configurados na própria listagem. Tudo
+ * dentro de uma única transação de banco para evitar condição de corrida
+ * (double purchase).
  */
 export async function purchaseCard(userId: string, cardId: number, currency: Currency) {
   return prisma.$transaction(async (tx) => {
@@ -103,9 +102,19 @@ export async function purchaseCard(userId: string, cardId: number, currency: Cur
       where: { userId_cardId: { userId, cardId } },
     });
     const currentQuantity = ownership?.quantity ?? 0;
-    if (currentQuantity >= MAX_COPIES_PURCHASABLE) {
+    if (currentQuantity >= listing.maxTotal) {
       throw new EconomyError(
-        `Limite de ${MAX_COPIES_PURCHASABLE} cópias desta carta já atingido.`
+        `Limite de ${listing.maxTotal} cópias desta carta já atingido.`
+      );
+    }
+
+    const currencyLimit = currency === "gold" ? listing.maxGold : listing.maxCash;
+    const currencyPurchases = await tx.purchase.count({
+      where: { userId, cardId, currencyUsed: currency },
+    });
+    if (currencyPurchases >= currencyLimit) {
+      throw new EconomyError(
+        `Limite de ${currencyLimit} cópias desta carta via ${currency} já atingido.`
       );
     }
 

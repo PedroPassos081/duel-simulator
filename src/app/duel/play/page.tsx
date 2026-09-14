@@ -1,0 +1,2008 @@
+"use client";
+
+import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Bot,
+  Bug,
+  Eye,
+  Loader2,
+  MessageCircle,
+  Circle,
+  Hand,
+  ScrollText,
+  Scissors,
+  Send,
+  Swords,
+  X,
+} from "lucide-react";
+import type { Card, DeckSection } from "@/types/card";
+
+type EquippedDeck = {
+  id: string;
+  name: string;
+  isEquipped: boolean;
+  cards: { section: DeckSection; quantity: number; card: Card }[];
+};
+
+type RoomState = {
+  id: string;
+  status: "waiting" | "rps" | "choosing" | "active" | "finished";
+  meId: string;
+  rpsRound: number;
+  rpsDeadline?: string | null;
+  rpsWinnerId?: string;
+  firstPlayerId?: string;
+  game?: RoomGameState | null;
+  players: {
+    id: string;
+    nickname: string;
+    choiceSubmitted: boolean;
+    rpsChoice?: "rock" | "paper" | "scissors";
+  }[];
+};
+
+type RoomGameState = {
+  meId: string;
+  ownHand: Card[];
+  ownMonsters: FieldCardView[];
+  ownSpellTraps: FieldCardView[];
+  opponentMonsters: FieldCardView[];
+  opponentSpellTraps: FieldCardView[];
+  ownDeckCount: number;
+  ownExtraCount: number;
+  opponentHandCount: number;
+  opponentDeckCount: number;
+  opponentExtraCount: number;
+  ownLifePoints: number;
+  opponentLifePoints: number;
+  winnerId?: string | null;
+  youWon?: boolean | null;
+  isYourTurn: boolean;
+  currentTurn: number;
+  currentPhase: string;
+  legalActions: Record<string, DuelCardAction[]>;
+  attackableMonsters: Array<{
+    cardId: number;
+    zone: number;
+    canDirect: boolean;
+  }>;
+  specialSummonCandidates: Card[];
+  decision?: OcgDecision | null;
+  chain?: {
+    card: Card | null;
+    linkCount: number;
+    awaitingYou: boolean;
+    controllerId: string;
+    deadlineAt?: string | null;
+    canForceClose: boolean;
+  } | null;
+};
+
+type OcgDecision =
+  | {
+      type: "yes_no";
+      source: "effect" | "generic";
+      cardId?: number;
+      description: string;
+    }
+  | { type: "option"; options: string[] }
+  | {
+      type: "cards" | "tributes" | "battle_targets";
+      min: number;
+      max: number;
+      canCancel: boolean;
+      candidates: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        card: Card | null;
+      }>;
+    }
+  | {
+      type: "position";
+      cardId: number;
+      positions: number[];
+      card: Card | null;
+    }
+  | {
+      type: "place";
+      count: number;
+      places: Array<{
+        index: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+      }>;
+    }
+  | {
+      type: "sum";
+      target: number;
+      min: number;
+      max: number;
+      mustCards: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        amount: number;
+        card: Card | null;
+      }>;
+      candidates: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        amount: number;
+        card: Card | null;
+      }>;
+    }
+  | {
+      type: "unselect";
+      canFinish: boolean;
+      canCancel: boolean;
+      min: number;
+      max: number;
+      selectable: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        card: Card | null;
+      }>;
+      selected: Array<{
+        index: number;
+        cardId: number;
+        controllerId: string;
+        location: number;
+        sequence: number;
+        card: Card | null;
+      }>;
+    };
+
+type DuelCardAction =
+  | "summon"
+  | "set_monster"
+  | "set_spell_trap"
+  | "activate"
+  | "special_summon"
+  | "attack";
+
+type FieldCardView = {
+  card?: Card;
+  faceDown: boolean;
+  position: string;
+  zone: number;
+};
+
+type PendingPlacement = {
+  action: Exclude<DuelCardAction, "special_summon" | "attack">;
+  cardId: number;
+  kind: "monster" | "spell" | "field";
+};
+
+const PHASES = ["DP", "SP", "MP1", "BP", "MP2", "EP"];
+const PHASE_KEYS: Record<string, string> = {
+  DP: "draw",
+  SP: "standby",
+  MP1: "main1",
+  BP: "battle",
+  MP2: "main2",
+  EP: "end",
+};
+
+function CardBack({ small = false }: { small?: boolean }) {
+  return (
+    <div
+      className={`relative ${small ? "h-[clamp(68px,9vh,88px)] aspect-[2/3]" : "h-[clamp(96px,14.5vh,142px)] aspect-[2/3]"} overflow-hidden rounded border border-edison-gold/65 bg-black shadow-[0_0_14px_rgba(208,168,89,0.22)]`}
+    >
+      <Image
+        src="/assets/master-duelist-card-back.svg"
+        alt="Verso Master Duelist"
+        fill
+        sizes={small ? "64px" : "104px"}
+        className="object-cover"
+        unoptimized
+      />
+    </div>
+  );
+}
+
+function DeckPile({ count }: { count: number }) {
+  return (
+    <div className="relative w-fit">
+      <CardBack />
+      <span className="absolute -bottom-1.5 -right-1.5 flex h-7 min-w-7 items-center justify-center rounded-full border border-white/25 bg-black px-1.5 font-mono text-xs font-black text-white shadow-lg">
+        {count}
+      </span>
+    </div>
+  );
+}
+
+function EmptyZone({
+  accent = "blue",
+}: {
+  accent?: "blue" | "pink";
+}) {
+  return (
+    <div
+      className={`relative flex h-[clamp(96px,14.5vh,142px)] aspect-[0.72] min-h-0 justify-self-center items-center justify-center rounded-[3px] border bg-black/15 ${
+        accent === "pink"
+          ? "border-fuchsia-300/80 shadow-[inset_0_0_12px_rgba(244,114,182,0.12)]"
+          : "border-sky-300/80 shadow-[inset_0_0_12px_rgba(56,189,248,0.12)]"
+      }`}
+    >
+      <div
+        className={`h-8 w-8 rotate-45 rounded-sm border-2 ${
+          accent === "pink" ? "border-fuchsia-500/50" : "border-sky-400/50"
+        }`}
+      />
+    </div>
+  );
+}
+
+function ZoneRow({
+  opponent = false,
+  kind,
+  cards = [],
+  onSelect,
+  selectable = false,
+  selectableZones,
+  onZoneSelect,
+  attackableZones,
+  targetableZones,
+  onAttack,
+  onTarget,
+}: {
+  opponent?: boolean;
+  kind: "monster" | "spell";
+  cards?: FieldCardView[];
+  onSelect?: (card: Card) => void;
+  selectable?: boolean;
+  selectableZones?: number[];
+  onZoneSelect?: (zone: number) => void;
+  attackableZones?: number[];
+  targetableZones?: number[];
+  onAttack?: (cardId: number, zone: number) => void;
+  onTarget?: (zone: number) => void;
+}) {
+  const pink = kind === "spell";
+  return (
+    <div className={`grid grid-cols-[repeat(5,104px)] justify-center gap-1 ${opponent ? "rotate-180" : ""}`}>
+      {Array.from({ length: 5 }, (_, index) => {
+        const fieldCard = cards.find((entry) => entry.zone === index);
+        const card = fieldCard?.card;
+        const defensePosition =
+          fieldCard?.position === "face_down_defense" ||
+          fieldCard?.position === "face_up_defense";
+        const zoneIsSelectable =
+          selectable &&
+          (selectableZones === undefined || selectableZones.includes(index));
+        const attackable = Boolean(
+          card && attackableZones?.includes(index)
+        );
+        const targetable = Boolean(targetableZones?.includes(index));
+        return fieldCard ? (
+          <button
+            key={`${card?.id ?? "hidden"}-${index}`}
+            type="button"
+            onClick={() => {
+              if (targetable) {
+                onTarget?.(index);
+              } else if (attackable && card) {
+                onAttack?.(card.id, index);
+              } else if (card) {
+                onSelect?.(card);
+              }
+            }}
+            className={`group relative min-h-0 justify-self-center overflow-hidden rounded-[3px] border bg-black/30 shadow-lg transition duration-300 hover:-translate-y-1 ${
+              fieldCard.faceDown
+                ? "border-fuchsia-400/55 hover:border-fuchsia-300 hover:shadow-[0_0_22px_rgba(217,70,239,0.38)]"
+                : "border-edison-gold/70 hover:border-edison-gold hover:brightness-110"
+            } ${
+              defensePosition
+                ? "h-[100px] aspect-[0.72] rotate-90"
+                : "h-[clamp(96px,14.5vh,142px)] aspect-[0.72]"
+            } ${
+              attackable
+                ? "animate-pulse ring-2 ring-red-400 shadow-[0_0_26px_rgba(248,113,113,0.55)]"
+                : targetable
+                  ? "animate-pulse ring-2 ring-edison-gold shadow-[0_0_28px_rgba(208,168,89,0.65)]"
+                  : ""
+            }`}
+            title={
+              targetable
+                ? "Clique para escolher este monstro como alvo do ataque"
+                : attackable
+                  ? "Clique para atacar com este monstro"
+                  : fieldCard.faceDown && card && !opponent
+                ? `Carta setada: ${card.name}`
+                : card
+                  ? `Ver ${card.name}`
+                  : "Carta virada para baixo"
+            }
+          >
+            {fieldCard.faceDown ? (
+              <>
+                <div className="absolute inset-0 transition duration-300 group-hover:scale-[1.03] group-hover:opacity-25">
+                  <CardBack />
+                </div>
+                {!opponent && card?.imageUrl && (
+                  <>
+                    <Image
+                      src={card.imageUrl}
+                      alt={`Prévia de ${card.name}`}
+                      fill
+                      sizes="100px"
+                      className="scale-[1.04] object-cover opacity-0 brightness-[0.38] saturate-[0.72] transition duration-300 ease-out group-hover:scale-100 group-hover:opacity-90"
+                      unoptimized
+                    />
+                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_35%,rgba(7,4,12,0.62)_100%)] opacity-0 transition duration-300 group-hover:opacity-100" />
+                    <div className="pointer-events-none absolute inset-x-1 bottom-1 translate-y-2 rounded bg-black/70 px-1 py-1 text-center text-[7px] font-black uppercase tracking-[0.16em] text-fuchsia-100 opacity-0 backdrop-blur-sm transition duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                      Carta setada
+                    </div>
+                  </>
+                )}
+              </>
+            ) : !card?.imageUrl ? (
+              <CardBack />
+            ) : (
+              <Image
+                src={card.imageUrl}
+                alt={card.name}
+                fill
+                sizes="100px"
+                className="object-cover"
+                unoptimized
+              />
+            )}
+            {(attackable || targetable) && (
+              <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-black/80 px-1 py-1 text-[7px] font-black uppercase tracking-wider text-white backdrop-blur-sm">
+                {targetable ? "Alvo" : "Atacar"}
+              </span>
+            )}
+          </button>
+        ) : (
+          <button
+            key={index}
+            type="button"
+            disabled={!zoneIsSelectable}
+            onClick={() => zoneIsSelectable && onZoneSelect?.(index)}
+            className={`h-[clamp(96px,14.5vh,142px)] aspect-[0.72] justify-self-center overflow-hidden rounded-[3px] p-0 transition [&>div]:h-full [&>div]:w-full ${
+              zoneIsSelectable
+                ? "animate-pulse ring-2 ring-inset ring-edison-gold hover:bg-edison-gold/15"
+                : ""
+            }`}
+          >
+            <EmptyZone accent={pink ? "pink" : "blue"} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function FieldZone({
+  fieldCard,
+  opponent = false,
+  selectable = false,
+  onSelect,
+  onZoneSelect,
+}: {
+  fieldCard?: FieldCardView;
+  opponent?: boolean;
+  selectable?: boolean;
+  onSelect?: (card: Card) => void;
+  onZoneSelect?: () => void;
+}) {
+  const card = fieldCard?.card;
+  if (fieldCard) {
+    return (
+      <button
+        type="button"
+        onClick={() => card && onSelect?.(card)}
+        className={`relative h-[clamp(96px,14.5vh,142px)] aspect-[0.72] overflow-hidden rounded-[3px] border border-edison-gold/70 bg-black/30 ${
+          opponent ? "rotate-180" : ""
+        }`}
+      >
+        {fieldCard.faceDown || !card?.imageUrl ? (
+          <CardBack />
+        ) : (
+          <Image
+            src={card.imageUrl}
+            alt={card.name}
+            fill
+            sizes="100px"
+            className="object-cover"
+            unoptimized
+          />
+        )}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={!selectable}
+      onClick={onZoneSelect}
+      className={`h-[clamp(96px,14.5vh,142px)] aspect-[0.72] overflow-hidden rounded-[3px] p-0 transition [&>div]:h-full [&>div]:w-full ${
+        selectable
+          ? "animate-pulse ring-2 ring-inset ring-edison-gold hover:bg-edison-gold/15"
+          : ""
+      }`}
+    >
+      <EmptyZone accent="pink" />
+    </button>
+  );
+}
+
+function CardInspector({ card }: { card?: Card }) {
+  const [panel, setPanel] = useState<"card" | "chat" | "log">("card");
+  const [chatText, setChatText] = useState("");
+  const [messages, setMessages] = useState<string[]>([]);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [report, setReport] = useState("");
+  const [reportStatus, setReportStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  useEffect(() => {
+    if (card) setPanel("card");
+  }, [card]);
+
+  function addLocalMessage() {
+    const message = chatText.trim();
+    if (!message) return;
+    setMessages((current) => [...current, message]);
+    setChatText("");
+  }
+
+  async function sendReport() {
+    if (report.trim().length < 10) return;
+    setReportStatus("sending");
+    const response = await fetch("/api/duel/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        description: report.trim(),
+        context: "Tela de duelo · Turno 01 · Main Phase 1",
+      }),
+    });
+    if (response.ok) {
+      setReportStatus("sent");
+      setReport("");
+    } else {
+      setReportStatus("error");
+    }
+  }
+
+  return (
+    <aside className="relative flex h-[calc(100vh-16px)] max-h-[1000px] flex-col overflow-hidden rounded-xl border border-white/10 bg-black/55 backdrop-blur-md">
+      <div className="border-b border-white/10 px-4 py-3">
+        <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-edison-gold">
+          {panel === "card" && <><Eye className="h-4 w-4" /> Carta selecionada</>}
+          {panel === "chat" && <><MessageCircle className="h-4 w-4" /> Chat do duelo</>}
+          {panel === "log" && <><ScrollText className="h-4 w-4" /> Log do duelo</>}
+        </p>
+      </div>
+      {panel === "card" && card ? (
+        <>
+          <div className="p-4 pb-3">
+            <div className="relative mx-auto aspect-[421/614] w-full max-w-[250px] overflow-hidden rounded shadow-2xl">
+              {card.imageUrl ? (
+                <Image
+                  src={card.imageUrl}
+                  alt={card.name}
+                  fill
+                  sizes="280px"
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                <CardBack />
+              )}
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto border-t border-white/10 p-4">
+            <h2 className="text-lg font-black leading-tight">{card.name}</h2>
+            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-sky-300">
+              {card.type}
+              {card.race ? ` · ${card.race}` : ""}
+            </p>
+            {(card.atk !== null || card.def !== null) && (
+              <div className="mt-3 flex gap-2 font-mono text-sm font-black">
+                <span className="rounded bg-red-500/15 px-2 py-1 text-red-300">
+                  ATK {card.atk ?? "?"}
+                </span>
+                <span className="rounded bg-sky-500/15 px-2 py-1 text-sky-300">
+                  DEF {card.def ?? "?"}
+                </span>
+              </div>
+            )}
+            <p className="mt-3 whitespace-pre-line text-sm leading-6 text-white/75">
+              {card.description}
+            </p>
+          </div>
+        </>
+      ) : panel === "card" ? (
+        <div className="flex flex-1 flex-col items-center justify-center p-5 text-center text-white/30">
+          <Eye className="h-9 w-9" />
+          <p className="mt-3 text-xs leading-5">
+            Clique em uma carta da mão ou do campo para ler seus dados e efeito.
+          </p>
+        </div>
+      ) : panel === "chat" ? (
+        <div className="flex min-h-0 flex-1 flex-col p-3">
+          <p className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[10px] leading-4 text-amber-200/65">
+            O envio entre os dois duelistas será ativado junto com as salas multiplayer.
+          </p>
+          <div className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto rounded-lg bg-black/25 p-2">
+            {messages.length === 0 ? (
+              <p className="pt-8 text-center text-xs text-white/25">Nenhuma mensagem ainda.</p>
+            ) : messages.map((message, index) => (
+              <div key={index} className="ml-auto max-w-[85%] rounded-lg bg-sky-600 px-3 py-2 text-xs">
+                <strong className="block text-[9px] text-sky-100/70">Você</strong>
+                {message}
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <input
+              value={chatText}
+              onChange={(event) => setChatText(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && addLocalMessage()}
+              placeholder="Digite uma mensagem..."
+              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-3 text-xs outline-none focus:border-sky-400"
+            />
+            <button onClick={addLocalMessage} className="rounded-lg bg-sky-600 p-2.5 hover:bg-sky-500">
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {[
+            "Duelo iniciado.",
+            "Você comprou 5 cartas.",
+            "Turno 01 iniciado.",
+            "Draw Phase concluída.",
+            "Standby Phase concluída.",
+            "Main Phase 1 iniciada.",
+          ].map((entry, index) => (
+            <div key={entry} className="flex gap-3 border-b border-white/5 py-2 text-xs">
+              <span className="font-mono text-white/25">{String(index + 1).padStart(2, "0")}</span>
+              <span className="text-white/65">{entry}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-1.5 border-t border-white/10 bg-black/30 p-2">
+        <button onClick={() => setPanel("chat")} className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[10px] font-bold ${panel === "chat" ? "bg-sky-600" : "bg-white/5 hover:bg-white/10"}`}>
+          <MessageCircle className="h-3.5 w-3.5" /> Chat
+        </button>
+        <button onClick={() => setPanel("log")} className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[10px] font-bold ${panel === "log" ? "bg-emerald-600" : "bg-white/5 hover:bg-white/10"}`}>
+          <ScrollText className="h-3.5 w-3.5" /> Log
+        </button>
+        <button onClick={() => { setReportOpen(true); setReportStatus("idle"); }} className="flex items-center justify-center gap-1 rounded-lg bg-red-700/80 py-2 text-[10px] font-bold hover:bg-red-600">
+          <Bug className="h-3.5 w-3.5" /> Relatar bug
+        </button>
+      </div>
+
+      {reportOpen && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full rounded-xl border border-red-400/25 bg-[#15131b] p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-black">Relatar um bug</h2>
+                <p className="mt-1 text-xs font-semibold text-amber-300">Descreva o mais detalhado possível.</p>
+              </div>
+              <button onClick={() => setReportOpen(false)} className="rounded p-1 text-white/50 hover:bg-white/10 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <textarea
+              value={report}
+              onChange={(event) => setReport(event.target.value)}
+              rows={8}
+              placeholder="Conte o que aconteceu, qual carta ou ação estava usando e o que esperava que acontecesse..."
+              className="mt-4 w-full resize-none rounded-lg border border-white/10 bg-black/35 p-3 text-sm outline-none focus:border-red-400"
+            />
+            {reportStatus === "sent" && <p className="mt-2 text-xs text-emerald-300">Relatório enviado. Obrigado por ajudar.</p>}
+            {reportStatus === "error" && <p className="mt-2 text-xs text-red-300">Não foi possível enviar. Verifique a configuração do e-mail.</p>}
+            <button
+              onClick={sendReport}
+              disabled={report.trim().length < 10 || reportStatus === "sending"}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-red-700 py-2.5 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {reportStatus === "sending" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bug className="h-4 w-4" />}
+              Enviar relatório
+            </button>
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function DuelistHud({
+  opponent = false,
+  lifePoints = 8_000,
+}: {
+  opponent?: boolean;
+  lifePoints?: number;
+}) {
+  const lifeRatio = Math.max(0, Math.min(100, (lifePoints / 8_000) * 100));
+  return (
+    <section
+      className={`flex min-w-56 items-center gap-3 rounded-xl border px-3 py-2 backdrop-blur-md ${
+        opponent
+          ? "border-red-400/25 bg-red-950/35"
+          : "border-sky-400/25 bg-sky-950/35"
+      }`}
+    >
+      <div
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border ${
+          opponent
+            ? "border-red-400/30 bg-red-500/10 text-red-300"
+            : "border-sky-400/30 bg-sky-500/10 text-sky-300"
+        }`}
+      >
+        {opponent ? <Bot className="h-6 w-6" /> : <Swords className="h-6 w-6" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-black">
+          {opponent ? "Oponente" : "Você"}
+        </p>
+        <div className="mt-1 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/40">
+            <div
+              style={{ width: `${lifeRatio}%` }}
+              className={`h-full transition-[width] duration-500 ${
+                opponent ? "bg-red-500" : "bg-sky-500"
+              }`}
+            />
+          </div>
+          <p className="font-mono text-sm font-black">
+            {lifePoints.toLocaleString("pt-BR")} LP
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PreDuelGate({
+  roomId,
+  onGameState,
+}: {
+  roomId: string;
+  onGameState: (game?: RoomGameState | null) => void;
+}) {
+  const [room, setRoom] = useState<RoomState>();
+  const [sending, setSending] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(15);
+  const [syncError, setSyncError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function refresh() {
+      const response = await fetch(
+        `/api/duel/rooms/${roomId}?time=${Date.now()}`,
+        {
+        cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        }
+      );
+      if (response.ok && active) {
+        const nextRoom: RoomState = await response.json();
+        setRoom(nextRoom);
+        onGameState(nextRoom.game);
+        setSyncError(false);
+      } else if (active) {
+        setSyncError(true);
+      }
+    }
+    refresh();
+    const timer = window.setInterval(refresh, 700);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [roomId, onGameState]);
+
+  useEffect(() => {
+    function updateCountdown() {
+      if (!room?.rpsDeadline) {
+        setSecondsLeft(15);
+        return;
+      }
+      setSecondsLeft(
+        Math.max(0, Math.ceil((new Date(room.rpsDeadline).getTime() - Date.now()) / 1000))
+      );
+    }
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 250);
+    return () => window.clearInterval(timer);
+  }, [room?.rpsDeadline]);
+
+  if (room?.status === "active" || room?.status === "finished") return null;
+  const me = room?.players.find((player) => player.id === room.meId);
+  const winner = room?.rpsWinnerId === room?.meId;
+
+  async function chooseRps(choice: "rock" | "paper" | "scissors") {
+    setSending(true);
+    await fetch(`/api/duel/rooms/${roomId}/rps`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ choice }),
+    });
+    setSending(false);
+  }
+
+  async function chooseOrder(goFirst: boolean) {
+    setSending(true);
+    await fetch(`/api/duel/rooms/${roomId}/order`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goFirst }),
+    });
+    setSending(false);
+  }
+
+  async function cancelSearch() {
+    setCancelling(true);
+    const response = await fetch(`/api/duel/rooms/${roomId}`, {
+      method: "DELETE",
+    });
+    if (response.ok) {
+      window.location.href = "/duel";
+      return;
+    }
+    setCancelling(false);
+  }
+
+  return (
+    <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[#080b12]/95 p-6 backdrop-blur-lg">
+      <section className="w-full max-w-xl rounded-3xl border border-edison-gold/25 bg-[#15131b] p-8 text-center shadow-2xl">
+        {!room || room.status === "waiting" ? (
+          <>
+            <Loader2 className="mx-auto h-12 w-12 animate-spin text-edison-gold" />
+            <h1 className="mt-5 text-2xl font-black">Procurando oponente</h1>
+            <p className="mt-2 text-sm text-white/50">
+              Você está na fila. A partida abrirá quando outro jogador apertar Jogar.
+            </p>
+            <button
+              type="button"
+              onClick={cancelSearch}
+              disabled={cancelling}
+              className="mt-7 rounded-xl border border-red-400/30 bg-red-500/10 px-6 py-3 text-sm font-black text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {cancelling ? "Cancelando..." : "Cancelar busca"}
+            </button>
+          </>
+        ) : room.status === "rps" ? (
+          <>
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-edison-gold">
+              Rodada {room.rpsRound}
+            </p>
+            <h1 className="mt-2 text-2xl font-black">Pedra, papel ou tesoura</h1>
+            <div className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-edison-gold/40 bg-edison-gold/10 font-mono text-xl font-black text-edison-gold">
+              {secondsLeft}
+            </div>
+            <p className="mt-2 text-sm text-white/50">
+              {me?.choiceSubmitted
+                ? "Escolha enviada. Aguardando o outro duelista."
+                : "Escolha uma opção. Ela ficará escondida até os dois responderem."}
+            </p>
+            <div className="mt-7 grid grid-cols-3 gap-3">
+              {[
+                { value: "rock" as const, label: "Pedra", Icon: Circle },
+                { value: "paper" as const, label: "Papel", Icon: Hand },
+                { value: "scissors" as const, label: "Tesoura", Icon: Scissors },
+              ].map(({ value, label, Icon }) => (
+                <button
+                  key={value}
+                  onClick={() => chooseRps(value)}
+                  disabled={sending || me?.choiceSubmitted}
+                  className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-5 font-black transition hover:border-edison-gold hover:bg-edison-gold/10 disabled:opacity-40"
+                >
+                  <Icon className="h-9 w-9" />
+                  {label}
+                </button>
+              ))}
+            </div>
+            {syncError && (
+              <p className="mt-4 text-xs text-red-300">
+                Reconectando à sala...
+              </p>
+            )}
+          </>
+        ) : winner ? (
+          <>
+            <Swords className="mx-auto h-12 w-12 text-edison-gold" />
+            <h1 className="mt-4 text-2xl font-black">Você venceu</h1>
+            <p className="mt-2 text-sm text-white/50">
+              Escolha a ordem do duelo.
+            </p>
+            <div className="mt-7 grid grid-cols-2 gap-3">
+              <button onClick={() => chooseOrder(true)} disabled={sending} className="rounded-xl bg-edison-gold px-5 py-4 font-black text-black disabled:opacity-50">
+                Quero começar
+              </button>
+              <button onClick={() => chooseOrder(false)} disabled={sending} className="rounded-xl border border-white/15 bg-white/5 px-5 py-4 font-black disabled:opacity-50">
+                Quero ir em segundo
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <Loader2 className="mx-auto h-12 w-12 animate-spin text-white/50" />
+            <h1 className="mt-5 text-2xl font-black">Aguardando a escolha</h1>
+            <p className="mt-2 text-sm text-white/50">
+              O vencedor está escolhendo quem começa.
+            </p>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+export default function DuelPlayPage() {
+  const [roomId, setRoomId] = useState<string>();
+  const [deck, setDeck] = useState<EquippedDeck>();
+  const [loading, setLoading] = useState(true);
+  const [selectedCard, setSelectedCard] = useState<Card>();
+  const [playerDeckCount, setPlayerDeckCount] = useState(0);
+  const [opponentDeckCount, setOpponentDeckCount] = useState(35);
+  const [gameState, setGameState] = useState<RoomGameState | null>();
+  const [actionError, setActionError] = useState<string>();
+  const [acting, setActing] = useState(false);
+  const [selectedHandIndex, setSelectedHandIndex] = useState<number>();
+  const [pendingPlacement, setPendingPlacement] = useState<PendingPlacement>();
+  const [selectedDecisionIndices, setSelectedDecisionIndices] = useState<number[]>([]);
+  const [specialSummonOpen, setSpecialSummonOpen] = useState(false);
+  const [chainSecondsLeft, setChainSecondsLeft] = useState(20);
+
+  useEffect(() => {
+    setRoomId(new URLSearchParams(window.location.search).get("room") ?? undefined);
+    fetch("/api/decks")
+      .then((response) => response.json())
+      .then((decks: EquippedDeck[]) => {
+        if (Array.isArray(decks)) {
+          const equippedDeck = decks.find((item) => item.isEquipped);
+          setDeck(equippedDeck);
+          setSelectedCard(
+            equippedDeck?.cards.find((item) => item.section === "main")?.card
+          );
+        }
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const mainDeck = useMemo(
+    () =>
+      deck?.cards
+        .filter((item) => item.section === "main")
+        .flatMap((item) => Array.from({ length: item.quantity }, () => item.card)) ??
+      [],
+    [deck]
+  );
+  const extraCount =
+    deck?.cards
+      .filter((item) => item.section === "extra")
+      .reduce((total, item) => total + item.quantity, 0) ?? 0;
+  const hand = gameState?.ownHand ?? mainDeck.slice(0, 5);
+  const fieldMonsters = gameState?.ownMonsters ?? [];
+  const fieldSpellTraps = gameState?.ownSpellTraps ?? [];
+  const ownFieldSpell = fieldSpellTraps.find((entry) => entry.zone === 5);
+  const opponentFieldSpell = gameState?.opponentSpellTraps.find(
+    (entry) => entry.zone === 5
+  );
+  const selectedActions = selectedCard
+    ? gameState?.legalActions[String(selectedCard.id)] ?? []
+    : [];
+  const inlinePlaceDecision = useMemo(() => {
+    const decision = gameState?.decision;
+    const meId = gameState?.meId;
+    if (!meId || decision?.type !== "place" || decision.count !== 1) {
+      return undefined;
+    }
+
+    const places = decision.places.filter(
+      (place) =>
+        place.controllerId === meId &&
+        ((place.location === 4 &&
+          place.sequence >= 0 &&
+          place.sequence < 5) ||
+          (place.location === 8 &&
+            place.sequence >= 0 &&
+            place.sequence <= 5))
+    );
+    if (places.length === 0) return undefined;
+
+    const kindForPlace = (place: (typeof places)[number]) =>
+      place.location === 4
+        ? ("monster" as const)
+        : place.sequence === 5
+          ? ("field" as const)
+          : ("spell" as const);
+    const kind = kindForPlace(places[0]);
+    if (!places.every((place) => kindForPlace(place) === kind)) {
+      return undefined;
+    }
+
+    return { kind, places };
+  }, [gameState]);
+  const battleTargetDecision =
+    gameState?.decision?.type === "battle_targets"
+      ? gameState.decision
+      : undefined;
+  const positionDecision =
+    gameState?.decision?.type === "position"
+      ? gameState.decision
+      : undefined;
+  const decisionSignature = gameState?.decision
+    ? gameState.decision.type === "cards" ||
+      gameState.decision.type === "tributes" ||
+      gameState.decision.type === "battle_targets"
+      ? `${gameState.decision.type}:${gameState.decision.candidates
+          .map((candidate) => candidate.index)
+          .join(",")}:${gameState.decision.min}:${gameState.decision.max}`
+      : gameState.decision.type === "sum"
+        ? `sum:${gameState.decision.candidates.map((candidate) => candidate.index).join(",")}`
+        : gameState.decision.type === "unselect"
+          ? `unselect:${gameState.decision.selectable.map((candidate) => candidate.index).join(",")}:${gameState.decision.selected.map((candidate) => candidate.index).join(",")}`
+          : `${gameState.decision.type}:${"cardId" in gameState.decision ? gameState.decision.cardId ?? "" : ""}`
+    : "";
+
+  useEffect(() => {
+    setSelectedDecisionIndices([]);
+  }, [decisionSignature]);
+
+  useEffect(() => {
+    function updateChainCountdown() {
+      const deadline = gameState?.chain?.deadlineAt;
+      if (!deadline) {
+        setChainSecondsLeft(20);
+        return;
+      }
+      setChainSecondsLeft(
+        Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000))
+      );
+    }
+    updateChainCountdown();
+    const timer = window.setInterval(updateChainCountdown, 250);
+    return () => window.clearInterval(timer);
+  }, [gameState?.chain?.deadlineAt]);
+
+  useEffect(() => {
+    setPlayerDeckCount(
+      gameState?.ownDeckCount ?? Math.max(mainDeck.length - 5, 0)
+    );
+    setOpponentDeckCount(gameState?.opponentDeckCount ?? 35);
+  }, [gameState, mainDeck.length]);
+
+  useEffect(() => {
+    function updateDeckCounts(event: Event) {
+      const detail = (
+        event as CustomEvent<{ player?: number; opponent?: number }>
+      ).detail;
+      if (Number.isInteger(detail?.player) && detail.player! >= 0) {
+        setPlayerDeckCount(detail.player!);
+      }
+      if (Number.isInteger(detail?.opponent) && detail.opponent! >= 0) {
+        setOpponentDeckCount(detail.opponent!);
+      }
+    }
+
+    window.addEventListener("duel:deck-count", updateDeckCounts);
+    return () => window.removeEventListener("duel:deck-count", updateDeckCounts);
+  }, []);
+
+  async function sendAction(
+    action:
+      | { type: "next_phase" | "end_turn" }
+      | {
+          type: "select_phase";
+          phase: "standby" | "main1" | "battle" | "main2";
+        }
+      | { type: "pass_chain" | "force_pass_chain" }
+      | { type: "activate_chain"; cardId: number }
+      | {
+          type: "ocg_decision";
+          yes?: boolean;
+          optionIndex?: number;
+          cardIndices?: number[] | null;
+          position?: number;
+          placeIndices?: number[];
+          toggleIndex?: number | null;
+          finishSelection?: boolean;
+        }
+      | {
+          type: "summon" | "set_monster" | "activate";
+          cardId: number;
+          zone: number;
+        }
+      | { type: "set_spell_trap"; cardId: number }
+      | { type: "special_summon"; cardId: number }
+      | { type: "attack"; cardId: number; zone: number }
+  ) {
+    if (!roomId || acting) return;
+    setActing(true);
+    setActionError(undefined);
+    const response = await fetch(`/api/duel/rooms/${roomId}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(action),
+    });
+    if (!response.ok) {
+      const result = await response.json();
+      setActionError(result.error ?? "Não foi possível realizar esta ação.");
+    } else {
+      setSelectedHandIndex(undefined);
+      setPendingPlacement(undefined);
+      setSpecialSummonOpen(false);
+    }
+    setActing(false);
+  }
+
+  function handleCardAction(action: DuelCardAction, cardId: number) {
+    if (action === "activate" && gameState?.chain?.awaitingYou) {
+      sendAction({ type: "activate_chain", cardId });
+      return;
+    }
+    if (action === "special_summon" || action === "set_spell_trap") {
+      sendAction({ type: action, cardId });
+      return;
+    }
+    if (action === "attack") return;
+    const card = hand.find((entry) => entry.id === cardId);
+    const fieldSpell = `${card?.type ?? ""} ${card?.race ?? ""}`
+      .toLowerCase()
+      .includes("field");
+    setPendingPlacement({
+      action,
+      cardId,
+      kind:
+        action === "summon" || action === "set_monster"
+          ? "monster"
+          : fieldSpell
+            ? "field"
+            : "spell",
+    });
+    setSelectedHandIndex(undefined);
+  }
+
+  function placeCard(zone: number) {
+    if (!pendingPlacement) return;
+    sendAction({
+      type: pendingPlacement.action,
+      cardId: pendingPlacement.cardId,
+      zone,
+    });
+  }
+
+  function chooseInlineDecisionZone(zone: number) {
+    const place = inlinePlaceDecision?.places.find(
+      (candidate) => candidate.sequence === zone
+    );
+    if (!place) return;
+    sendAction({ type: "ocg_decision", placeIndices: [place.index] });
+  }
+
+  function declareAttack(cardId: number, zone: number) {
+    sendAction({ type: "attack", cardId, zone });
+  }
+
+  function chooseBattleTarget(zone: number) {
+    const target = battleTargetDecision?.candidates.find(
+      (candidate) => candidate.location === 4 && candidate.sequence === zone
+    );
+    if (!target) return;
+    sendAction({ type: "ocg_decision", cardIndices: [target.index] });
+  }
+
+  function selectPhase(phase: string) {
+    const target = PHASE_KEYS[phase];
+    if (phase === "EP") {
+      sendAction({ type: "end_turn" });
+      return;
+    }
+    if (
+      target === "standby" ||
+      target === "main1" ||
+      target === "battle" ||
+      target === "main2"
+    ) {
+      sendAction({ type: "select_phase", phase: target });
+    }
+  }
+
+  function phaseIsAvailable(phase: string) {
+    if (!gameState?.isYourTurn || acting) return false;
+    const current = gameState.currentPhase;
+    if (phase === "SP") return current === "draw";
+    if (phase === "MP1") return current === "standby";
+    if (phase === "BP") {
+      return current === "main1" && gameState.currentTurn > 1;
+    }
+    if (phase === "MP2") return current === "battle";
+    if (phase === "EP") {
+      return ["main1", "battle", "main2", "end"].includes(current);
+    }
+    return false;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden bg-[#080b12] text-white">
+      {roomId && (
+        <PreDuelGate roomId={roomId} onGameState={setGameState} />
+      )}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(77,55,128,0.35),transparent_60%),linear-gradient(135deg,#080b12,#111425_50%,#080b12)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(168,85,247,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,.2)_1px,transparent_1px)] [background-size:80px_80px]" />
+
+      {specialSummonOpen && !gameState?.decision && (
+        <div className="absolute inset-0 z-[94] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-violet-400/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
+            <h2 className="text-xl font-black">Invocações especiais disponíveis</h2>
+            <p className="mt-1 text-xs text-white/50">
+              O OCGCore continuará pedindo materiais, posição e zona quando necessário.
+            </p>
+            <div className="mt-5 flex max-h-[52vh] flex-wrap justify-center gap-3 overflow-y-auto">
+              {gameState?.specialSummonCandidates.map((card) => (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => handleCardAction("special_summon", card.id)}
+                  disabled={acting}
+                  className="w-28 rounded-lg border border-violet-400/25 bg-violet-400/10 p-2 transition hover:border-violet-300 hover:bg-violet-400/20 disabled:opacity-40"
+                >
+                  <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                    {card.imageUrl && (
+                      <Image
+                        src={card.imageUrl}
+                        alt={card.name}
+                        fill
+                        sizes="112px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    )}
+                  </div>
+                  <span className="mt-2 block text-[10px] font-black leading-tight">
+                    {card.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSpecialSummonOpen(false)}
+              className="mt-5 rounded-lg border border-white/15 bg-white/5 px-6 py-2.5 text-xs font-black"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {gameState?.decision &&
+        gameState.decision.type !== "place" &&
+        gameState.decision.type !== "battle_targets" &&
+        !inlinePlaceDecision && (
+        <div className="absolute inset-0 z-[95] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-edison-gold">
+              Decisão do efeito
+            </p>
+
+            {gameState.decision.type === "yes_no" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  Deseja aplicar este efeito?
+                </h2>
+                <p className="mt-2 text-xs text-white/45">
+                  O duelo continuará depois da sua escolha.
+                </p>
+                <div className="mt-5 flex justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => sendAction({ type: "ocg_decision", yes: true })}
+                    disabled={acting}
+                    className="rounded-lg bg-edison-gold px-7 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                  >
+                    Sim
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sendAction({ type: "ocg_decision", yes: false })}
+                    disabled={acting}
+                    className="rounded-lg border border-white/15 bg-white/5 px-7 py-2.5 text-xs font-black text-white disabled:opacity-40"
+                  >
+                    Não
+                  </button>
+                </div>
+              </>
+            )}
+
+            {gameState.decision.type === "option" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">Escolha uma opção</h2>
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                  {gameState.decision.options.map((option, index) => (
+                    <button
+                      key={`${option}-${index}`}
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", optionIndex: index })
+                      }
+                      disabled={acting}
+                      className="rounded-lg border border-edison-gold/25 bg-edison-gold/10 px-4 py-3 text-left text-xs font-bold text-white transition hover:bg-edison-gold/20 disabled:opacity-40"
+                    >
+                      Opção {index + 1}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {(gameState.decision.type === "cards" ||
+              gameState.decision.type === "tributes") && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  {gameState.decision.type === "tributes"
+                    ? "Escolha os tributos"
+                    : "Escolha as cartas"}
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  Selecione entre {gameState.decision.min} e {gameState.decision.max}.
+                </p>
+                <div className="mt-5 flex max-h-[48vh] flex-wrap justify-center gap-3 overflow-y-auto p-1">
+                  {gameState.decision.candidates.map((candidate) => {
+                    const selected = selectedDecisionIndices.includes(candidate.index);
+                    const maxSelections =
+                      gameState.decision?.type === "cards" ||
+                      gameState.decision?.type === "tributes"
+                        ? gameState.decision.max
+                        : 0;
+                    return (
+                      <button
+                        key={`${candidate.index}-${candidate.cardId}`}
+                        type="button"
+                        onClick={() =>
+                          setSelectedDecisionIndices((current) =>
+                            current.includes(candidate.index)
+                              ? current.filter((index) => index !== candidate.index)
+                              : current.length < maxSelections
+                                ? [...current, candidate.index]
+                                : current
+                          )
+                        }
+                        className={`w-24 rounded-lg border p-2 transition ${
+                          selected
+                            ? "border-edison-gold bg-edison-gold/20 ring-2 ring-edison-gold/35"
+                            : "border-white/10 bg-white/5 hover:border-white/30"
+                        }`}
+                      >
+                        <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                          {candidate.card?.imageUrl ? (
+                            <Image
+                              src={candidate.card.imageUrl}
+                              alt={candidate.card.name}
+                              fill
+                              sizes="96px"
+                              className="object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                              Carta
+                            </div>
+                          )}
+                        </div>
+                        <span className="mt-1.5 block truncate text-[9px] font-bold">
+                          {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-5 flex justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      sendAction({
+                        type: "ocg_decision",
+                        cardIndices: selectedDecisionIndices,
+                      })
+                    }
+                    disabled={
+                      acting ||
+                      selectedDecisionIndices.length < gameState.decision.min ||
+                      selectedDecisionIndices.length > gameState.decision.max
+                    }
+                    className="rounded-lg bg-edison-gold px-6 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                  >
+                    Confirmar ({selectedDecisionIndices.length})
+                  </button>
+                  {gameState.decision.canCancel && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", cardIndices: null })
+                      }
+                      disabled={acting}
+                      className="rounded-lg border border-white/15 bg-white/5 px-6 py-2.5 text-xs font-black disabled:opacity-40"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {gameState.decision.type === "sum" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  Escolha os materiais
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  A soma dos níveis selecionados precisa ser {gameState.decision.target}.
+                </p>
+                {gameState.decision.mustCards.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">
+                      Incluído automaticamente
+                    </p>
+                    <div className="mt-2 flex flex-wrap justify-center gap-3">
+                      {gameState.decision.mustCards.map((candidate) => (
+                        <div
+                          key={`must-${candidate.index}-${candidate.cardId}`}
+                          className="w-24 rounded-lg border border-edison-gold/60 bg-edison-gold/10 p-2"
+                        >
+                          <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                            {candidate.card?.imageUrl ? (
+                              <Image
+                                src={candidate.card.imageUrl}
+                                alt={candidate.card.name}
+                                fill
+                                sizes="96px"
+                                className="object-cover"
+                                unoptimized
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                                Carta
+                              </div>
+                            )}
+                          </div>
+                          <span className="mt-1.5 block truncate text-[9px] font-bold">
+                            {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                          </span>
+                          <span className="block text-[9px] text-edison-gold">
+                            Nível {candidate.amount}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="mt-4 flex max-h-[40vh] flex-wrap justify-center gap-3 overflow-y-auto p-1">
+                  {gameState.decision.candidates.map((candidate) => {
+                    const selected = selectedDecisionIndices.includes(candidate.index);
+                    return (
+                      <button
+                        key={`${candidate.index}-${candidate.cardId}`}
+                        type="button"
+                        onClick={() =>
+                          setSelectedDecisionIndices((current) =>
+                            current.includes(candidate.index)
+                              ? current.filter((index) => index !== candidate.index)
+                              : [...current, candidate.index]
+                          )
+                        }
+                        className={`w-24 rounded-lg border p-2 transition ${
+                          selected
+                            ? "border-edison-gold bg-edison-gold/20 ring-2 ring-edison-gold/35"
+                            : "border-white/10 bg-white/5 hover:border-white/30"
+                        }`}
+                      >
+                        <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                          {candidate.card?.imageUrl ? (
+                            <Image
+                              src={candidate.card.imageUrl}
+                              alt={candidate.card.name}
+                              fill
+                              sizes="96px"
+                              className="object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                              Carta
+                            </div>
+                          )}
+                        </div>
+                        <span className="mt-1.5 block truncate text-[9px] font-bold">
+                          {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                        </span>
+                        <span className="block text-[9px] text-edison-gold">
+                          Nível {candidate.amount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {(() => {
+                  const decision = gameState.decision;
+                  if (decision.type !== "sum") return null;
+                  const mustTotal = decision.mustCards.reduce(
+                    (total, card) => total + card.amount,
+                    0
+                  );
+                  const selectedTotal = selectedDecisionIndices.reduce(
+                    (total, index) =>
+                      total + (decision.candidates[index]?.amount ?? 0),
+                    0
+                  );
+                  const currentTotal = mustTotal + selectedTotal;
+                  const validCount =
+                    selectedDecisionIndices.length >= decision.min &&
+                    selectedDecisionIndices.length <= decision.max;
+                  return (
+                    <>
+                      <p className="mt-3 text-xs text-white/60">
+                        Total selecionado: {currentTotal} / {decision.target}
+                      </p>
+                      <div className="mt-3 flex justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            sendAction({
+                              type: "ocg_decision",
+                              cardIndices: selectedDecisionIndices,
+                            })
+                          }
+                          disabled={
+                            acting || !validCount || currentTotal !== decision.target
+                          }
+                          className="rounded-lg bg-edison-gold px-6 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                        >
+                          Confirmar ({selectedDecisionIndices.length})
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+
+            {gameState.decision.type === "unselect" && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  Escolha os materiais
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  Selecione entre {gameState.decision.min} e {gameState.decision.max} carta(s).
+                </p>
+                <div className="mt-4 flex max-h-[40vh] flex-wrap justify-center gap-3 overflow-y-auto p-1">
+                  {gameState.decision.selected.map((candidate) => (
+                    <button
+                      key={`selected-${candidate.index}-${candidate.cardId}`}
+                      type="button"
+                      onClick={() =>
+                        sendAction({
+                          type: "ocg_decision",
+                          toggleIndex: candidate.index,
+                        })
+                      }
+                      disabled={acting}
+                      className="w-24 rounded-lg border border-edison-gold bg-edison-gold/20 p-2 ring-2 ring-edison-gold/35 transition disabled:opacity-40"
+                    >
+                      <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                        {candidate.card?.imageUrl ? (
+                          <Image
+                            src={candidate.card.imageUrl}
+                            alt={candidate.card.name}
+                            fill
+                            sizes="96px"
+                            className="object-cover"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                            Carta
+                          </div>
+                        )}
+                      </div>
+                      <span className="mt-1.5 block truncate text-[9px] font-bold">
+                        {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                      </span>
+                      <span className="block text-[9px] text-white/50">Remover</span>
+                    </button>
+                  ))}
+                  {gameState.decision.selectable.map((candidate) => (
+                    <button
+                      key={`selectable-${candidate.index}-${candidate.cardId}`}
+                      type="button"
+                      onClick={() =>
+                        sendAction({
+                          type: "ocg_decision",
+                          toggleIndex: candidate.index,
+                        })
+                      }
+                      disabled={acting}
+                      className="w-24 rounded-lg border border-white/10 bg-white/5 p-2 transition hover:border-white/30 disabled:opacity-40"
+                    >
+                      <div className="relative mx-auto aspect-[421/614] w-full overflow-hidden rounded bg-black/40">
+                        {candidate.card?.imageUrl ? (
+                          <Image
+                            src={candidate.card.imageUrl}
+                            alt={candidate.card.name}
+                            fill
+                            sizes="96px"
+                            className="object-cover"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[9px] text-white/40">
+                            Carta
+                          </div>
+                        )}
+                      </div>
+                      <span className="mt-1.5 block truncate text-[9px] font-bold">
+                        {candidate.card?.name ?? `Carta ${candidate.cardId}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-5 flex justify-center gap-3">
+                  {gameState.decision.canFinish && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", finishSelection: true })
+                      }
+                      disabled={acting}
+                      className="rounded-lg bg-edison-gold px-6 py-2.5 text-xs font-black text-black disabled:opacity-40"
+                    >
+                      Concluir ({gameState.decision.selected.length})
+                    </button>
+                  )}
+                  {gameState.decision.canCancel && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        sendAction({ type: "ocg_decision", toggleIndex: null })
+                      }
+                      disabled={acting}
+                      className="rounded-lg border border-white/15 bg-white/5 px-6 py-2.5 text-xs font-black disabled:opacity-40"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {positionDecision && (
+              <>
+                <h2 className="mt-2 text-xl font-black">
+                  Escolha como invocar
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  Clique na posição visual desejada para continuar.
+                </p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {positionDecision.positions.map((position) => {
+                    const defensePosition = position === 4 || position === 8;
+                    const faceDownPosition = position === 2 || position === 8;
+                    const positionLabel = defensePosition ? "Defesa" : "Ataque";
+
+                    return (
+                      <button
+                        key={position}
+                        type="button"
+                        onClick={() =>
+                          sendAction({ type: "ocg_decision", position })
+                        }
+                        disabled={acting}
+                        title={`Invocar em posição de ${positionLabel.toLowerCase()}`}
+                        className="group flex min-h-56 flex-col items-center justify-center rounded-xl border border-edison-gold/25 bg-edison-gold/[0.07] p-4 transition duration-200 hover:border-edison-gold/70 hover:bg-edison-gold/15 hover:shadow-[0_0_28px_rgba(208,168,89,0.18)] disabled:opacity-40"
+                      >
+                        <div className="flex h-44 w-full items-center justify-center">
+                          <div
+                            className={`relative h-40 aspect-[421/614] overflow-hidden rounded border border-edison-gold/65 bg-black shadow-xl transition duration-200 group-hover:scale-105 ${defensePosition ? "rotate-90" : ""}`}
+                          >
+                            {faceDownPosition ? (
+                              <Image
+                                src="/assets/master-duelist-card-back.svg"
+                                alt={`${positionLabel} com a carta virada para baixo`}
+                                fill
+                                sizes="112px"
+                                className="object-cover"
+                                unoptimized
+                              />
+                            ) : positionDecision.card?.imageUrl ? (
+                              <Image
+                                src={positionDecision.card.imageUrl}
+                                alt={`${positionDecision.card.name} em posição de ${positionLabel.toLowerCase()}`}
+                                fill
+                                sizes="112px"
+                                className="object-cover"
+                                unoptimized
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center bg-white/5 px-2 text-center text-[10px] font-bold text-white/55">
+                                {positionDecision.card?.name ?? "Monstro"}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <span className="mt-2 rounded-full border border-white/10 bg-black/35 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-edison-gold">
+                          {positionLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {actionError && (
+              <p className="mt-4 rounded bg-red-950/80 px-3 py-2 text-xs text-red-200">
+                {actionError}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {inlinePlaceDecision && (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-[80] flex justify-center">
+          <div className="rounded-full border border-edison-gold/45 bg-[#121019]/95 px-5 py-2 text-xs font-black text-edison-gold shadow-2xl backdrop-blur">
+            Escolha uma das zonas iluminadas para concluir a ação
+          </div>
+        </div>
+      )}
+
+      {battleTargetDecision && (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-[80] flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-red-400/45 bg-[#121019]/95 px-5 py-2 text-xs font-black text-red-200 shadow-2xl backdrop-blur">
+            <span>Escolha o monstro que será atacado</span>
+            {battleTargetDecision.canCancel && (
+              <button
+                type="button"
+                onClick={() =>
+                  sendAction({ type: "ocg_decision", cardIndices: null })
+                }
+                disabled={acting}
+                className="rounded-full bg-red-600 px-3 py-1 text-[10px] text-white transition hover:bg-red-500 disabled:opacity-40"
+              >
+                Ataque direto
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {gameState?.chain && !gameState.decision && (
+        <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/45 pointer-events-none">
+          <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-edison-gold/35 bg-[#121019]/95 p-5 text-center shadow-2xl backdrop-blur">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-edison-gold">
+              Chain Link {gameState.chain.linkCount}
+            </p>
+            <h2 className="mt-2 text-lg font-black">
+              {gameState.chain.card?.name ?? "Efeito ativado"}
+            </h2>
+            <p className="mt-2 text-xs text-white/55">
+              {gameState.chain.awaitingYou
+                ? "Deseja responder à ativação?"
+                : "Aguardando a resposta do oponente."}
+            </p>
+            {gameState.chain.deadlineAt && (
+              <div className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-edison-gold/45 bg-edison-gold/10 font-mono text-xl font-black text-edison-gold">
+                {chainSecondsLeft}
+              </div>
+            )}
+            {gameState.chain.awaitingYou && (
+              <button
+                type="button"
+                onClick={() => sendAction({ type: "pass_chain" })}
+                disabled={acting}
+                className="mt-4 rounded-lg bg-edison-gold px-5 py-2 text-xs font-black text-black disabled:opacity-40"
+              >
+                Sem resposta
+              </button>
+            )}
+            {!gameState.chain.awaitingYou &&
+              (gameState.chain.canForceClose || chainSecondsLeft === 0) && (
+                <button
+                  type="button"
+                  onClick={() => sendAction({ type: "force_pass_chain" })}
+                  disabled={acting}
+                  className="mt-4 rounded-lg bg-red-600 px-5 py-2 text-xs font-black text-white transition hover:bg-red-500 disabled:opacity-40"
+                >
+                  Finalizar chain
+                </button>
+              )}
+          </div>
+        </div>
+      )}
+
+      {gameState?.winnerId && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70">
+          <div className="w-full max-w-sm rounded-2xl border border-edison-gold/40 bg-[#121019] p-8 text-center shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-edison-gold">
+              Duelo encerrado
+            </p>
+            <h2 className="mt-3 text-3xl font-black">
+              {gameState.youWon ? "Vitória" : "Derrota"}
+            </h2>
+            <p className="mt-2 text-sm text-white/65">
+              O OCGCore confirmou o resultado da partida.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="relative z-10 mx-auto grid h-screen w-full max-w-[1600px] grid-cols-[clamp(300px,25vw,360px)_minmax(0,1fr)] items-center gap-2 overflow-hidden p-2">
+        <CardInspector card={selectedCard} />
+
+        <main className="relative mx-auto flex h-[calc(100vh-16px)] max-h-[1000px] w-full max-w-[1160px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[radial-gradient(circle_at_center,rgba(72,39,85,0.65),rgba(8,21,25,0.92)_70%)] p-2 shadow-[0_0_60px_rgba(91,33,182,0.22)]">
+          <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,transparent_0,transparent_28%,rgba(168,85,247,.5)_29%,transparent_30%,transparent_43%,rgba(34,211,238,.35)_44%,transparent_45%)]" />
+
+          <div className="relative flex min-h-0 flex-1 flex-col justify-center gap-1">
+            <div className="absolute left-1 top-1 z-10">
+              <DuelistHud lifePoints={gameState?.ownLifePoints} />
+            </div>
+            <div className="absolute right-1 top-1 z-10">
+              <DuelistHud
+                opponent
+                lifePoints={gameState?.opponentLifePoints}
+              />
+            </div>
+            <div className="mb-2 flex min-h-[58px] items-start justify-center gap-1 pt-1">
+              {Array.from(
+                { length: gameState?.opponentHandCount ?? 5 },
+                (_, index) => (
+                <CardBack key={index} small />
+                )
+              )}
+            </div>
+
+            <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-red-400/15 bg-red-950/[0.08] p-1">
+              <div className="flex flex-col items-center gap-2">
+                <DeckPile count={opponentDeckCount} />
+                <EmptyZone accent="blue" />
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <ZoneRow
+                  opponent
+                  kind="spell"
+                  cards={gameState?.opponentSpellTraps}
+                />
+                <ZoneRow
+                  opponent
+                  kind="monster"
+                  cards={gameState?.opponentMonsters}
+                  onSelect={setSelectedCard}
+                  targetableZones={battleTargetDecision?.candidates
+                    .filter((candidate) => candidate.location === 4)
+                    .map((candidate) => candidate.sequence)}
+                  onTarget={chooseBattleTarget}
+                />
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <FieldZone
+                  opponent
+                  fieldCard={opponentFieldSpell}
+                  onSelect={setSelectedCard}
+                />
+                <EmptyZone accent="blue" />
+              </div>
+            </div>
+
+            <div className="mx-auto w-full max-w-[790px] rounded-xl border border-white/10 bg-black/45 px-3 py-1.5 shadow-lg backdrop-blur-sm">
+              <div className="flex items-center justify-center gap-1.5">
+                {PHASES.map((phase) => (
+                  <button
+                    key={phase}
+                    onClick={() => selectPhase(phase)}
+                    disabled={!phaseIsAvailable(phase)}
+                    className={`min-w-11 rounded px-3 py-1.5 text-[10px] font-black transition ${
+                      PHASE_KEYS[phase] === gameState?.currentPhase
+                        ? "bg-emerald-600 text-white shadow-[0_0_14px_rgba(22,163,74,0.35)]"
+                        : phaseIsAvailable(phase)
+                          ? "border border-emerald-400/30 bg-white/10 text-white hover:bg-emerald-600/30"
+                          : "border border-white/10 bg-white/5 text-white/25"
+                    }`}
+                  >
+                    {phase}
+                  </button>
+                ))}
+                <button
+                  onClick={() => sendAction({ type: "end_turn" })}
+                  disabled={acting || !gameState?.isYourTurn}
+                  className="ml-2 rounded bg-red-700 px-4 py-1.5 text-[10px] font-black text-white transition hover:bg-red-600 disabled:opacity-35"
+                >
+                  Terminar turno
+                </button>
+                <div className="ml-1 flex items-center gap-2 rounded border border-edison-gold/25 bg-edison-gold/10 px-3 py-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-white/45">
+                    Turno
+                  </span>
+                  <strong className="font-mono text-sm text-edison-gold">
+                    {String(gameState?.currentTurn ?? 1).padStart(2, "0")}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="mx-auto grid w-full max-w-[790px] grid-cols-[96px_1fr_96px] items-center gap-1 rounded-xl border border-sky-400/20 bg-sky-950/[0.1] p-1">
+              <div className="flex flex-col items-center gap-2">
+                <FieldZone
+                  fieldCard={ownFieldSpell}
+                  selectable={
+                    pendingPlacement?.kind === "field" ||
+                    inlinePlaceDecision?.kind === "field"
+                  }
+                  onSelect={setSelectedCard}
+                  onZoneSelect={() =>
+                    inlinePlaceDecision?.kind === "field"
+                      ? chooseInlineDecisionZone(5)
+                      : placeCard(5)
+                  }
+                />
+                <div className="relative">
+                  <EmptyZone accent="blue" />
+                  <span className="absolute -bottom-1 -right-1 rounded bg-black px-1.5 py-0.5 text-[9px] font-bold">
+                    {extraCount}
+                  </span>
+                  {(gameState?.specialSummonCandidates.length ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSpecialSummonOpen(true)}
+                      className="absolute inset-x-1 bottom-1 rounded bg-violet-700/95 px-1 py-1 text-[8px] font-black uppercase tracking-wide text-white shadow-lg hover:bg-violet-600"
+                    >
+                      Invocar
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div>
+                  <ZoneRow
+                    kind="monster"
+                    cards={fieldMonsters}
+                    onSelect={setSelectedCard}
+                    attackableZones={gameState?.attackableMonsters.map(
+                      (attacker) => attacker.zone
+                    )}
+                    onAttack={declareAttack}
+                    selectable={
+                      pendingPlacement?.kind === "monster" ||
+                      inlinePlaceDecision?.kind === "monster"
+                    }
+                    selectableZones={
+                      inlinePlaceDecision?.kind === "monster"
+                        ? inlinePlaceDecision.places.map((place) => place.sequence)
+                        : undefined
+                    }
+                    onZoneSelect={
+                      inlinePlaceDecision?.kind === "monster"
+                        ? chooseInlineDecisionZone
+                        : placeCard
+                    }
+                  />
+                </div>
+                <div>
+                  <ZoneRow
+                    kind="spell"
+                    cards={fieldSpellTraps}
+                    onSelect={setSelectedCard}
+                    selectable={
+                      pendingPlacement?.kind === "spell" ||
+                      inlinePlaceDecision?.kind === "spell"
+                    }
+                    selectableZones={
+                      inlinePlaceDecision?.kind === "spell"
+                        ? inlinePlaceDecision.places.map((place) => place.sequence)
+                        : undefined
+                    }
+                    onZoneSelect={
+                      inlinePlaceDecision?.kind === "spell"
+                        ? chooseInlineDecisionZone
+                        : placeCard
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <EmptyZone accent="blue" />
+                <DeckPile count={playerDeckCount} />
+              </div>
+            </div>
+
+            <div className="flex h-[clamp(132px,20vh,190px)] shrink-0 items-center justify-center gap-2 overflow-visible">
+              {loading &&
+                Array.from({ length: 5 }, (_, index) => (
+                  <CardBack key={index} small />
+                ))}
+              {!loading &&
+                hand.map((card, index) =>
+                  card.imageUrl ? (
+                    <div
+                      key={`${card.id}-${index}`}
+                      className="group relative h-[clamp(126px,19vh,184px)] aspect-[421/614] transition hover:z-20"
+                    >
+                      {selectedHandIndex === index &&
+                        selectedActions.length > 0 && (
+                          <div className="absolute bottom-[calc(100%+6px)] left-1/2 z-50 flex -translate-x-1/2 gap-1 rounded-lg border border-white/15 bg-[#111018]/95 p-1.5 shadow-2xl backdrop-blur">
+                            {selectedActions.map((action) => (
+                              <button
+                                key={action}
+                                type="button"
+                                onClick={() => handleCardAction(action, card.id)}
+                                disabled={acting}
+                                className="whitespace-nowrap rounded-md bg-edison-gold px-2.5 py-1.5 text-[10px] font-black text-black transition hover:brightness-110 disabled:opacity-40"
+                              >
+                                {{
+                                  summon: "Normal Summon",
+                                  set_monster: "Set",
+                                  set_spell_trap: "Set",
+                                  activate: "Ativar",
+                                  special_summon: "Special Summon",
+                                  attack: "Atacar",
+                                }[action]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCard(card);
+                          setSelectedHandIndex((current) =>
+                            current === index ? undefined : index
+                          );
+                          setActionError(undefined);
+                        }}
+                        className={`relative h-full w-full transition hover:-translate-y-2 hover:scale-105 ${
+                          selectedHandIndex === index
+                            ? "-translate-y-2 ring-2 ring-edison-gold"
+                            : ""
+                        }`}
+                      >
+                        <Image
+                          src={card.imageUrl}
+                          alt={card.name}
+                          fill
+                          sizes="80px"
+                          className="rounded object-cover shadow-xl"
+                          unoptimized
+                        />
+                      </button>
+                      {selectedHandIndex === index && actionError && (
+                        <p className="absolute left-1/2 top-[calc(100%+4px)] z-50 w-48 -translate-x-1/2 rounded bg-red-950/95 px-2 py-1 text-center text-[9px] text-red-200">
+                          {actionError}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <CardBack key={`${card.id}-${index}`} small />
+                  )
+                )}
+            </div>
+          </div>
+        </main>
+
+      </div>
+    </div>
+  );
+}

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -66,6 +67,18 @@ export default async function HomePage() {
         <div className="absolute left-1/2 top-0 -z-10 h-96 w-96 -translate-x-1/2 rounded-full bg-edison-gold/10 blur-3xl" />
 
         <section className="mx-auto max-w-4xl text-center">
+          <Image
+            src="/icon.png"
+            alt="Emblema Master Duelist"
+            width={192}
+            height={192}
+            priority
+            className="mx-auto mb-5 h-40 w-40 object-contain drop-shadow-[0_0_32px_rgba(212,175,55,0.25)] sm:h-48 sm:w-48"
+          />
+          <div className="mb-6 leading-none">
+            <p className="text-4xl font-black uppercase tracking-[0.14em] text-edison-gold drop-shadow-[0_2px_12px_rgba(212,175,55,0.25)] sm:text-5xl">Master</p>
+            <p className="mt-2 text-xl font-semibold uppercase tracking-[0.38em] text-gray-100 sm:text-2xl">Duelist</p>
+          </div>
           <div className="mx-auto mb-6 flex w-fit items-center gap-2 rounded-full border border-edison-gold/20 bg-edison-gold/10 px-4 py-2 text-sm font-medium text-edison-gold">
             <Sparkles className="h-4 w-4" />
             Formato Edison

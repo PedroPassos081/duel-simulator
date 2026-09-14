@@ -1,11 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/deck-builder";
@@ -44,14 +45,19 @@ export default function LoginPage() {
 
       <section className="w-full max-w-md rounded-2xl border border-edison-border bg-edison-panel/90 p-6 shadow-2xl shadow-black/30 backdrop-blur sm:p-8">
         <div className="mb-7 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-edison-gold/30 bg-edison-gold/10 text-xl font-bold text-edison-gold">
-            E
-          </div>
+          <Image
+            src="/logo_with_name.png"
+            alt="Logo Master Duelist"
+            width={128}
+            height={128}
+            priority
+            className="mx-auto mb-2 h-28 w-28 object-contain drop-shadow-[0_0_24px_rgba(212,175,55,0.28)]"
+          />
           <h1 className="text-2xl font-semibold tracking-tight">
             Bem-vindo de volta
           </h1>
           <p className="mt-2 text-sm text-gray-400">
-            Entre para continuar no Edison Duel Simulator
+            Entre para continuar no Master Duelist
           </p>
         </div>
 
@@ -131,5 +137,19 @@ export default function LoginPage() {
         </p>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center text-sm text-gray-400">
+          Carregando login...
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

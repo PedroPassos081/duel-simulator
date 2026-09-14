@@ -2,6 +2,68 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// Cartas liberadas fora do recorte histórico para testar interações complexas
+// do OCGCore. Manter esta lista explícita evita importar o catálogo moderno
+// inteiro junto do pool base do jogo.
+const TEST_CARD_IDS = [
+  55610595, // Blackwing - Pinaki the Waxing Moon
+  49003716, // Blackwing - Bora the Spear
+  58820853, // Blackwing - Shura the Blue Flame
+  75498415, // Blackwing - Sirocco the Dawn
+  2009101, // Blackwing - Gale the Whirlwind
+  81105204, // Blackwing - Kris the Crack of Dawn
+  22835145, // Blackwing - Blizzard the Far North
+  14785765, // Blackwing - Zephyros the Elite
+  85215458, // Blackwing - Kalut the Moon Shadow
+  76913983, // Blackwing Armed Wing
+  69031175, // Blackwing Armor Master
+  33236860, // Blackwing - Silverwind the Ascendant
+  1475311, // Allure of Darkness
+  53567095, // Icarus Attack
+  5318639, // Mystical Space Typhoon
+  91351370, // Black Whirlwind
+] as const;
+
+type ApiCard = {
+  id: number;
+  name: string;
+  type: string;
+  race?: string;
+  attribute?: string;
+  atk?: number;
+  def?: number;
+  level?: number;
+  desc?: string;
+  card_images?: { image_url?: string }[];
+};
+
+async function fetchCards(url: string, label: string): Promise<ApiCard[]> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Erro ao buscar ${label}: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as { data?: ApiCard[] };
+  if (!Array.isArray(payload.data)) {
+    throw new Error(`A API não retornou cartas para ${label}.`);
+  }
+  return payload.data;
+}
+
+async function fetchOptionalCards(url: string, label: string): Promise<ApiCard[]> {
+  try {
+    return await fetchCards(url, label);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[SEED] Aviso: ${message}. Usando descrições em inglês.`);
+    return [];
+  }
+}
+
+function mergeCards(...catalogs: ApiCard[][]) {
+  return [...new Map(catalogs.flat().map((card) => [card.id, card])).values()];
+}
+
 // =========================================================================
 // 1. TABELA DE PREÇOS MANUAIS E LIMITES POR CARTA
 // As cartas aqui recebem os teus valores e travas exatas.
@@ -36,32 +98,42 @@ const tabelaDePrecosExcecoes: Record<
 };
 
 async function main() {
-  console.log(`\n[SEED] Limpando dados antigos da loja e cartas...`);
-  // Deleta listagens e cartas antigas em cascata para garantir que não fiquem resíduos
-  await prisma.shopListing.deleteMany();
-  await prisma.card.deleteMany();
-
   console.log(`[SEED] Buscando catálogo TCG em Inglês (Nomes Oficiais)...`);
   const urlEn = `https://db.ygoprodeck.com/api/v7/cardinfo.php?enddate=2006-12-31&format=tcg`;
-  const resEn = await fetch(urlEn);
-  if (!resEn.ok) throw new Error(`Erro ao conectar à API (EN): ${resEn.statusText}`);
-  const dataEn = await resEn.json();
-  const apiCardsEn = dataEn.data;
+  const baseCardsEn = await fetchCards(urlEn, "catálogo TCG em inglês");
+
+  console.log(`[SEED] Buscando pacote seletivo de teste dos Blackwing...`);
+  const testIds = TEST_CARD_IDS.join(",");
+  const testCardsEn = await fetchCards(
+    `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${testIds}`,
+    "pacote Blackwing em inglês"
+  );
+  const returnedTestIds = new Set(testCardsEn.map((card) => card.id));
+  const missingTestIds = TEST_CARD_IDS.filter((id) => !returnedTestIds.has(id));
+  if (missingTestIds.length > 0) {
+    throw new Error(`A API não retornou as cartas de teste: ${missingTestIds.join(", ")}.`);
+  }
+  const apiCardsEn = mergeCards(baseCardsEn, testCardsEn);
 
   console.log(`[SEED] Buscando catálogo TCG em Português (Efeitos/Descrições)...`);
   const urlPt = `https://db.ygoprodeck.com/api/v7/cardinfo.php?enddate=2006-12-31&format=tcg&language=pt`;
-  const resPt = await fetch(urlPt);
-  const dataPt = await resPt.json();
+  const [baseCardsPt, testCardsPt] = await Promise.all([
+    fetchOptionalCards(urlPt, "catálogo TCG em português"),
+    fetchOptionalCards(
+      `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${testIds}&language=pt`,
+      "pacote Blackwing em português"
+    ),
+  ]);
 
   // Mapeia as descrições traduzidas em Português usando o ID da carta
   const ptDescMap = new Map<number, string>();
-  if (dataPt.data) {
-    for (const card of dataPt.data) {
-      ptDescMap.set(card.id, card.desc);
-    }
+  for (const card of mergeCards(baseCardsPt, testCardsPt)) {
+    if (card.desc) ptDescMap.set(card.id, card.desc);
   }
 
-  console.log(`[SEED] Processando ${apiCardsEn.length} cartas TCG (≤ 2006). Populando o banco...`);
+  console.log(
+    `[SEED] Processando ${apiCardsEn.length} cartas TCG (pool base + ${TEST_CARD_IDS.length} cartas de teste). Populando o banco...`
+  );
 
   let importCount = 0;
   let customPriceCount = 0;

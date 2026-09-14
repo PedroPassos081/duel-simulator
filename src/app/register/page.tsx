@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
@@ -50,9 +51,10 @@ export default function RegisterPage() {
     setEmail((data.email ?? email).toLowerCase());
     setStep("verify");
     setMessage(
-      res.ok
-        ? "Enviamos um código de 6 dígitos para o seu e-mail."
-        : data.error
+      data.message ??
+        (res.ok
+          ? "Enviamos um código de 6 dígitos para o seu e-mail."
+          : data.error)
     );
   }
 
@@ -103,15 +105,20 @@ export default function RegisterPage() {
 
       <section className="w-full max-w-md rounded-2xl border border-edison-border bg-edison-panel/90 p-6 shadow-2xl shadow-black/30 backdrop-blur sm:p-8">
         <div className="mb-7 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-edison-gold/30 bg-edison-gold/10 text-xl font-bold text-edison-gold">
-            E
-          </div>
+          <Image
+            src="/icon.png"
+            alt="Emblema Master Duelist"
+            width={128}
+            height={128}
+            priority
+            className="mx-auto mb-4 h-28 w-28 object-contain drop-shadow-[0_0_24px_rgba(212,175,55,0.22)]"
+          />
           <h1 className="text-2xl font-semibold tracking-tight">
             {step === "register" ? "Crie sua conta" : "Confirme seu e-mail"}
           </h1>
           <p className="mt-2 text-sm text-gray-400">
             {step === "register"
-              ? "Comece agora no Edison Duel Simulator"
+              ? "Comece agora no Master Duelist"
               : `Digite o código de 6 dígitos enviado para ${email}`}
           </p>
         </div>
