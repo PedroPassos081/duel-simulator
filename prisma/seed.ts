@@ -6,33 +6,38 @@ const prisma = new PrismaClient();
 // 1. TABELA DE PREÇOS MANUAIS E LIMITES POR CARTA
 // As cartas aqui recebem os teus valores e travas exatas.
 // Se a carta NÃO estiver nesta tabela, o script usará o preço automático padrão.
+//
+// maxGold = quantas das PRIMEIRAS cópias podem ser compradas com gold (o resto só em crédito):
+//   2 → padrão, a 3ª cópia só em crédito
+//   1 → a partir da 2ª cópia só em crédito
+//   0 → carta só pode ser comprada com crédito
 // =========================================================================
 const tabelaDePrecosExcecoes: Record<
   number,
   { gold: number; cash: number; maxTotal?: number; maxGold?: number; maxCash?: number }
 > = {
   // --- MONSTROS CLÁSSICOS / EFEITO ---
-  89631139: { gold: 2000, cash: 200, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Blue-Eyes White Dragon
-  46986414: { gold: 1500, cash: 150, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Dark Magician
-  70781052: { gold: 400, cash: 40, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Summoned Skull
-  52097679: { gold: 500, cash: 50, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Cyber Dragon
-  44519536: { gold: 600, cash: 60, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Elemental HERO Stratos
+  89631139: { gold: 2000, cash: 200, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Blue-Eyes White Dragon
+  46986414: { gold: 1500, cash: 150, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Dark Magician
+  70781052: { gold: 400, cash: 40, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Summoned Skull
+  52097679: { gold: 500, cash: 50, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Cyber Dragon
+  44519536: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Elemental HERO Stratos
 
   // --- MONSTROS DO EXTRA DECK ---
-  70903359: { gold: 1200, cash: 120, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Stardust Dragon
-  25788011: { gold: 1000, cash: 100, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Number 39: Utopia
-  63646218: { gold: 800, cash: 80, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Elemental HERO Flame Wingman
+  70903359: { gold: 1200, cash: 120, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Stardust Dragon
+  25788011: { gold: 1000, cash: 100, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Number 39: Utopia
+  63646218: { gold: 800, cash: 80, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Elemental HERO Flame Wingman
 
   // --- MÁGICAS ---
   83764718: { gold: 1000, cash: 100, maxTotal: 1, maxGold: 1, maxCash: 1 }, // Monster Reborn (Limitada 1x)
-  242146: { gold: 400, cash: 40, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Mystical Space Typhoon
-  78651105: { gold: 300, cash: 30, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Polymerization
-  14087893: { gold: 500, cash: 50, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Book of Moon
+  242146: { gold: 400, cash: 40, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Mystical Space Typhoon
+  78651105: { gold: 300, cash: 30, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Polymerization
+  14087893: { gold: 500, cash: 50, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Book of Moon
 
   // --- ARMADILHAS ---
   41420027: { gold: 1200, cash: 120, maxTotal: 3, maxGold: 2, maxCash: 1 }, // Solemn Judgment
-  18045289: { gold: 600, cash: 60, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Mirror Force
-  4734313: { gold: 600, cash: 60, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Torrential Tribute
+  18045289: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Mirror Force
+  4734313: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Torrential Tribute
 };
 
 async function main() {
@@ -103,7 +108,7 @@ async function main() {
     let priceGold = 200;
     let priceCash = 20;
     let maxTotal = 3;
-    let maxGold = 3;
+    let maxGold = 2; // padrão: a 3ª cópia é sempre em crédito
     let maxCash = 3;
 
     if (tabelaDePrecosExcecoes[cardData.id]) {
@@ -111,7 +116,7 @@ async function main() {
       priceGold = config.gold;
       priceCash = config.cash;
       maxTotal = config.maxTotal ?? 3;
-      maxGold = config.maxGold ?? 3;
+      maxGold = config.maxGold ?? 2;
       maxCash = config.maxCash ?? 3;
       customPriceCount++;
     } else {

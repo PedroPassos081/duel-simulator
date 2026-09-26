@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 // Inicializa o auth compatível com o Edge Runtime
 const { auth: edgeAuth } = NextAuth(authConfig);
 
-const PROTECTED_PATHS = ["/deck-builder", "/shop", "/api/decks", "/api/shop", "/api/wallet"];
+const PROTECTED_PATHS = ["/deck-builder", "/shop", "/account", "/random", "/duel", "/cla", "/api/decks", "/api/shop", "/api/wallet", "/api/account", "/api/random", "/api/duel", "/api/clans"];
 
 export default edgeAuth((req) => {
   const isProtected = PROTECTED_PATHS.some((p) => req.nextUrl.pathname.startsWith(p));
@@ -20,5 +20,5 @@ export default edgeAuth((req) => {
 });
 
 export const config = {
-  matcher: ["/deck-builder/:path*", "/shop/:path*", "/api/decks/:path*", "/api/shop/:path*", "/api/wallet/:path*"],
+  matcher: ["/deck-builder/:path*", "/shop/:path*", "/account/:path*", "/random/:path*", "/duel/:path*", "/cla/:path*", "/api/clans/:path*", "/api/decks/:path*", "/api/shop/:path*", "/api/wallet/:path*", "/api/account/:path*", "/api/random/:path*", "/api/duel/:path*"],
 };

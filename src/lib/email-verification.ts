@@ -56,6 +56,11 @@ export async function sendVerificationEmail(email: string, code: string) {
   const from = process.env.RESEND_FROM_EMAIL;
 
   if (!apiKey || !from) {
+    // Em desenvolvimento, sem Resend configurado, mostra o código no terminal
+    if (process.env.NODE_ENV !== "production") {
+      console.info(`[DEV] Código de confirmação para ${email}: ${code}`);
+      return;
+    }
     throw new Error("RESEND_NOT_CONFIGURED");
   }
 

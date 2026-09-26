@@ -9,7 +9,9 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { CREDIT_LABEL_PLURAL } from "@/lib/shop-rules";
 import { prisma } from "@/lib/prisma";
 
 function formatDate(date: Date) {
@@ -24,6 +26,9 @@ export default async function HomePage() {
   const userId = session?.user
     ? (session.user as { id?: string }).id
     : undefined;
+
+  // O jornal é a página principal de quem está logado
+  if (userId) redirect("/jornal");
 
   const [user, catalogSize] = await Promise.all([
     userId
@@ -184,7 +189,7 @@ export default async function HomePage() {
           },
           {
             icon: Sparkles,
-            label: "Gemas disponíveis",
+            label: `${CREDIT_LABEL_PLURAL} disponíveis`,
             value: user.wallet?.cash ?? 0,
             color: "text-purple-400 bg-purple-400/10",
           },
