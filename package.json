@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "duel:resources": "node scripts/setup-duel-resources.mjs",
-    "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed": "tsx --env-file=.env prisma/seed.ts",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
   },

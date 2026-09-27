@@ -204,7 +204,7 @@ export default function RegisterPage() {
             <button
               type="button"
               onClick={() =>
-                signIn("google", { callbackUrl: "/deck-builder" })
+                signIn("google", { callbackUrl: "/jornal" })
               }
               className="flex h-11 w-full items-center justify-center gap-3 rounded-lg border border-edison-border bg-white px-4 font-medium text-gray-900 transition hover:bg-gray-100"
             >

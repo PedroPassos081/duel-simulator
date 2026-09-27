@@ -15,9 +15,17 @@ export const authConfig = {
             const protectedPaths = [
                 "/deck-builder",
                 "/shop",
+                "/account",
+                "/random",
+                "/duel",
+                "/cla",
                 "/api/decks",
                 "/api/shop",
                 "/api/wallet",
+                "/api/account",
+                "/api/random",
+                "/api/duel",
+                "/api/clans",
             ];
 
             const isProtected = protectedPaths.some((path) =>

@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { CircleDollarSign, Gem } from "lucide-react";
+import { CircleDollarSign, Gem, Layers, Package, Sparkles } from "lucide-react";
+import { StructureDecksTab } from "./StructureDecksTab";
 import type { Card } from "@/types/card";
+import {
+  CREDIT_LABEL,
+  canBuyNextWithGold,
+  goldCopyLimit,
+  goldLimitNotice,
+} from "@/lib/shop-rules";
 
 interface ShopListing {
   id: string;
@@ -12,10 +19,63 @@ interface ShopListing {
   priceCash: number | null;
   cashOnly: boolean;
   ownedQuantity: number;
-  maxTotal?: number;
+  maxTotal: number;
+  maxGold: number;
 }
 
+type ShopTab = "cards" | "structures" | "cosmetics";
+
+const SHOP_TABS: { id: ShopTab; label: string; icon: typeof Layers; hint: string }[] = [
+  { id: "structures", label: "Structure Decks", icon: Package, hint: "Decks prontos para jogar" },
+  { id: "cards", label: "Cartas", icon: Layers, hint: "Cópias avulsas" },
+  { id: "cosmetics", label: "Cosméticos", icon: Sparkles, hint: "Em breve" },
+];
+
 export default function ShopPage() {
+  const [tab, setTab] = useState<ShopTab>("structures");
+
+  return (
+    <div className="container mx-auto max-w-7xl px-4 py-8">
+      <div className="mb-6 border-b border-zinc-800 pb-5">
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Loja</h1>
+        <p className="mt-1 text-sm text-zinc-400">Decks prontos, cartas avulsas e, em breve, cosméticos.</p>
+      </div>
+
+      {/* ABAS DA LOJA */}
+      <div className="mb-6 grid grid-cols-3 gap-2 sm:flex sm:w-fit">
+        {SHOP_TABS.map(({ id, label, icon: Icon, hint }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`flex flex-col items-center gap-0.5 rounded-xl border px-4 py-2.5 text-center transition-all sm:flex-row sm:gap-2 sm:text-left ${
+              tab === id
+                ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                : "border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+            }`}
+          >
+            <Icon className="h-5 w-5 shrink-0" />
+            <span>
+              <span className="block text-sm font-bold">{label}</span>
+              <span className="hidden text-[11px] opacity-70 sm:block">{hint}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {tab === "structures" && <StructureDecksTab />}
+      {tab === "cards" && <CardsTab />}
+      {tab === "cosmetics" && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-16 text-center">
+          <Sparkles className="mx-auto h-8 w-8 text-purple-400" />
+          <p className="mt-3 font-bold text-zinc-200">Cosméticos em breve</p>
+          <p className="mt-1 text-sm text-zinc-500">Sleeves, playmats, molduras e estilos de nick.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardsTab() {
   const [listings, setListings] = useState<ShopListing[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -117,21 +177,12 @@ export default function ShopPage() {
   }, [listings, searchName, categoryFilter, attributeFilter, monsterRaceFilter, subTypeFilter]);
 
   return (
-    <div className="container mx-auto max-w-7xl px-4 py-8">
-      {/* CABEÇALHO */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-zinc-800 pb-5">
-        <div>
-          <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">Loja de Cartas</h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            Explore e adquira cópias para montar seu deck
-          </p>
+    <div>
+      {message && (
+        <div className="mb-4 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2.5 text-sm text-amber-400 font-medium animate-fade-in">
+          {message}
         </div>
-        {message && (
-          <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2.5 text-sm text-amber-400 font-medium animate-fade-in">
-            {message}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* BARRA DE FILTROS */}
       <div className="flex flex-col gap-4 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 mb-8">
@@ -267,8 +318,10 @@ export default function ShopPage() {
       {/* GRID DE CARTAS */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {filteredListings.map((listing) => {
-          const maxAllowed = listing.maxTotal ?? 3;
+          const maxAllowed = listing.maxTotal;
           const maxed = listing.ownedQuantity >= maxAllowed;
+          const goldAllowed = canBuyNextWithGold(listing, listing.ownedQuantity);
+          const notice = goldLimitNotice(listing);
 
           return (
             <div
@@ -308,6 +361,11 @@ export default function ShopPage() {
                       {listing.ownedQuantity} / {maxAllowed}
                     </span>
                   </div>
+                  {notice && (
+                    <div className="text-[10px] font-medium text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded-md px-1.5 py-1 text-center leading-tight">
+                      {notice}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -316,7 +374,8 @@ export default function ShopPage() {
                 <div className="grid grid-cols-2 gap-1.5">
                   {listing.priceGold != null && (
                     <button
-                      disabled={maxed || loadingId === `${listing.cardId}-gold`}
+                      disabled={maxed || !goldAllowed || loadingId === `${listing.cardId}-gold`}
+                      title={!goldAllowed && !maxed ? `Próxima cópia só com ${CREDIT_LABEL.toLowerCase()}` : "Comprar com gold"}
                       onClick={() => handleBuy(listing.cardId, "gold")}
                       className="group/btn rounded-lg bg-zinc-800 text-zinc-200 text-xs font-bold py-2 px-1 hover:bg-amber-500 hover:text-black disabled:bg-zinc-800/30 disabled:text-zinc-600 transition-all text-center flex items-center justify-center gap-1 min-h-[32px]"
                     >
@@ -334,6 +393,7 @@ export default function ShopPage() {
                   {listing.priceCash != null && (
                     <button
                       disabled={maxed || loadingId === `${listing.cardId}-cash`}
+                      title={`Comprar com ${CREDIT_LABEL.toLowerCase()}`}
                       onClick={() => handleBuy(listing.cardId, "cash")}
                       className="group/btn rounded-lg bg-zinc-800 text-zinc-200 text-xs font-bold py-2 px-1 hover:bg-purple-500 hover:text-white disabled:bg-zinc-800/30 disabled:text-zinc-600 transition-all text-center flex items-center justify-center gap-1 min-h-[32px]"
                     >
@@ -364,8 +424,10 @@ export default function ShopPage() {
       {/* MODAL DE DETALHES */}
       {selectedListing && (() => {
         const card = selectedListing.card;
-        const maxAllowed = selectedListing.maxTotal ?? 3;
+        const maxAllowed = selectedListing.maxTotal;
         const maxed = selectedListing.ownedQuantity >= maxAllowed;
+        const goldAllowed = canBuyNextWithGold(selectedListing, selectedListing.ownedQuantity);
+        const goldLimit = goldCopyLimit(selectedListing);
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
@@ -453,10 +515,21 @@ export default function ShopPage() {
                     </span>
                   </div>
 
+                  <div className="flex items-start gap-2 text-xs text-purple-200 bg-purple-500/10 border border-purple-500/20 rounded-lg p-2.5 leading-relaxed">
+                    <Gem className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                    <span>
+                      {goldLimit === 0
+                        ? `Esta carta só pode ser comprada com ${CREDIT_LABEL.toLowerCase()}.`
+                        : goldLimit >= maxAllowed
+                          ? `Todas as cópias podem ser compradas com gold ou ${CREDIT_LABEL.toLowerCase()}.`
+                          : `${goldLimit === 1 ? "Só a 1ª cópia pode" : `As ${goldLimit} primeiras cópias podem`} ser compradas com gold. As demais, só com ${CREDIT_LABEL.toLowerCase()}.`}
+                    </span>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2">
                     {selectedListing.priceGold != null && (
                       <button
-                        disabled={maxed || loadingId === `${selectedListing.cardId}-gold`}
+                        disabled={maxed || !goldAllowed || loadingId === `${selectedListing.cardId}-gold`}
                         onClick={() => handleBuy(selectedListing.cardId, "gold")}
                         className="rounded-xl bg-amber-500 text-black text-xs font-bold py-3 px-2 hover:bg-amber-400 disabled:bg-zinc-800 disabled:text-zinc-600 transition-all text-center flex items-center justify-center gap-1.5"
                       >
@@ -465,7 +538,7 @@ export default function ShopPage() {
                         ) : (
                           <>
                             <CircleDollarSign className="w-4 h-4 text-black" />
-                            <span>Comprar ({selectedListing.priceGold})</span>
+                            <span>Gold ({selectedListing.priceGold})</span>
                           </>
                         )}
                       </button>
@@ -481,16 +554,20 @@ export default function ShopPage() {
                         ) : (
                           <>
                             <Gem className="w-4 h-4 text-white" />
-                            <span>Comprar ({selectedListing.priceCash})</span>
+                            <span>{CREDIT_LABEL} ({selectedListing.priceCash})</span>
                           </>
                         )}
                       </button>
                     )}
                   </div>
 
-                  {maxed && (
+                  {maxed ? (
                     <div className="text-center text-xs font-medium text-amber-500 bg-amber-500/10 py-1.5 rounded-lg border border-amber-500/20">
                       Você já possui o limite máximo dessa carta.
+                    </div>
+                  ) : !goldAllowed && selectedListing.priceGold != null && (
+                    <div className="text-center text-xs font-medium text-purple-300">
+                      A {selectedListing.ownedQuantity + 1}ª cópia só pode ser comprada com {CREDIT_LABEL.toLowerCase()}.
                     </div>
                   )}
                 </div>

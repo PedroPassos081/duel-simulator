@@ -89,6 +89,10 @@ export async function POST() {
           lastSeenAt: new Date(),
         },
       });
+      // Quem caiu num duelo pelo lobby sai da fila do Random (salas Slifer/Obelisco)
+      await tx.matchQueueEntry.deleteMany({
+        where: { userId: { in: [userId, waiting.players[0].userId] } },
+      });
       return tx.match.update({
         where: { id: waiting.id },
         data: {

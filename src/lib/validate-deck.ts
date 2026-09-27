@@ -44,9 +44,12 @@ const DECK_SIZE_RULES = {
 export function validateDeck(
   entries: DeckCardEntry[],
   banlist: BanlistInfo[],
-  ownerships?: OwnershipInfo[]
+  ownerships?: OwnershipInfo[],
+  options: { formatLabel?: string; cardNames?: Map<number, string> } = {}
 ): DeckIssue[] {
   const issues: DeckIssue[] = [];
+  const formatLabel = options.formatLabel ?? "banlist Edison";
+  const cardLabel = (cardId: number) => options.cardNames?.get(cardId) ?? `Carta ${cardId}`;
 
   const banlistByCard = new Map(banlist.map((b) => [b.cardId, b.status]));
   const ownershipByCard = new Map(ownerships?.map((o) => [o.cardId, o.quantity]) ?? []);
@@ -77,7 +80,7 @@ export function validateDeck(
     if (total > maxAllowed) {
       issues.push({
         level: "error",
-        message: `Carta ${cardId} está "${status}" no formato Edison (máx ${maxAllowed}), mas o deck tem ${total}.`,
+        message: `${cardLabel(cardId)} está "${status}" na ${formatLabel} (máx ${maxAllowed}), mas o deck tem ${total}.`,
       });
     }
 
@@ -86,7 +89,7 @@ export function validateDeck(
       if (total > owned) {
         issues.push({
           level: "error",
-          message: `Você possui ${owned} cópias da carta ${cardId}, mas o deck usa ${total}. Compre mais na loja.`,
+          message: `Você possui ${owned} cópias de ${cardLabel(cardId)}, mas o deck usa ${total}. Compre mais na loja.`,
         });
       }
     }

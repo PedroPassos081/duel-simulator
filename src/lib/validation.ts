@@ -5,25 +5,52 @@ export const loginSchema = z.object({
   password: z.string().min(8),
 });
 
+const usernameField = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, "Usuário deve ter pelo menos 3 caracteres")
+  .max(24, "Usuário deve ter no máximo 24 caracteres")
+  .regex(
+    /^[a-z0-9_]+$/,
+    "Use apenas letras minúsculas, números e sublinhado no usuário"
+  );
+
+// mínimo 8 chars, pelo menos 1 letra e 1 número — ajuste a política como quiser
+const passwordField = z
+  .string()
+  .min(8, "Senha deve ter pelo menos 8 caracteres")
+  .regex(/[A-Za-z]/, "Senha deve conter letras")
+  .regex(/[0-9]/, "Senha deve conter números");
+
 export const registerSchema = z.object({
   name: z.string().trim().min(2).max(60),
-  username: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(3, "Usuário deve ter pelo menos 3 caracteres")
-    .max(24, "Usuário deve ter no máximo 24 caracteres")
-    .regex(
-      /^[a-z0-9_]+$/,
-      "Use apenas letras minúsculas, números e sublinhado no usuário"
-    ),
+  username: usernameField,
   email: z.string().trim().toLowerCase().email("E-mail inválido"),
-  // mínimo 8 chars, pelo menos 1 letra e 1 número — ajuste a política como quiser
-  password: z
+  password: passwordField,
+});
+
+// Foto de perfil: imagem já redimensionada no navegador (256x256), como data URL.
+const MAX_AVATAR_DATA_URL_LENGTH = 300_000;
+
+export const profileUpdateSchema = z.object({
+  username: usernameField.optional(),
+  image: z
     .string()
-    .min(8, "Senha deve ter pelo menos 8 caracteres")
-    .regex(/[A-Za-z]/, "Senha deve conter letras")
-    .regex(/[0-9]/, "Senha deve conter números"),
+    .max(MAX_AVATAR_DATA_URL_LENGTH, "Imagem muito grande")
+    .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/, "Formato de imagem inválido")
+    .nullable()
+    .optional(),
+});
+
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().optional(),
+  newPassword: passwordField,
+});
+
+export const equipCosmeticSchema = z.object({
+  type: z.string().min(1),
+  cosmeticId: z.string().min(1).nullable(),
 });
 
 export const verificationSchema = z.object({

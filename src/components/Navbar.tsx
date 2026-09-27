@@ -3,6 +3,11 @@ import Link from "next/link";
 import { CircleDollarSign, Gem } from "lucide-react";
 import { auth, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { CREDIT_LABEL_PLURAL } from "@/lib/shop-rules";
+import { Avatar } from "@/components/Avatar";
+import { toAvatarProps, toPlayerNameProps, userAvatarSelect } from "@/lib/avatar";
+import { PlayerName } from "@/components/PlayerName";
+import { countPendingApprovals } from "@/lib/clans/service";
 
 export async function Navbar() {
   const session = await auth();
@@ -14,7 +19,7 @@ export async function Navbar() {
   const currentUser = userId
     ? await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true },
+        select: { id: true, ...userAvatarSelect },
       })
     : null;
 
@@ -26,11 +31,14 @@ export async function Navbar() {
       })
     : null;
 
+  // Pedidos do clã esperando a resposta deste jogador (líder/vice)
+  const clanApprovals = currentUser ? await countPendingApprovals(currentUser.id) : 0;
+
   return (
     <header className="border-b border-edison-border bg-edison-panel">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-        <nav className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-white hover:opacity-90">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+        <nav className="flex min-w-0 items-center gap-4 overflow-x-auto sm:gap-6">
+          <Link href="/" className="flex shrink-0 items-center gap-2 text-lg font-semibold tracking-tight text-white hover:opacity-90">
             <Image
               src="/icon.png"
               alt="Emblema Master Duelist"
@@ -43,6 +51,26 @@ export async function Navbar() {
               <span className="mt-0.5 block text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-gray-100">Duelist</span>
             </span>
           </Link>
+          <Link href="/jornal" className="text-sm text-gray-300 hover:text-white transition-colors">
+            Jornal
+          </Link>
+          <Link href="/calendario" className="text-sm text-gray-300 hover:text-white transition-colors">
+            Calendário
+          </Link>
+          <Link href="/random" className="text-sm text-gray-300 hover:text-white transition-colors">
+            Random
+          </Link>
+          <Link href="/ranking" className="text-sm text-gray-300 hover:text-white transition-colors">
+            Ranking
+          </Link>
+          <Link href="/cla" className="flex shrink-0 items-center gap-1 text-sm text-gray-300 hover:text-white transition-colors">
+            Clã
+            {clanApprovals > 0 && (
+              <span className="rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white" title="Pedidos aguardando sua resposta">
+                {clanApprovals}
+              </span>
+            )}
+          </Link>
           <Link href="/deck-builder" className="text-sm text-gray-300 hover:text-white transition-colors">
             Deck
           </Link>
@@ -54,7 +82,7 @@ export async function Navbar() {
           </Link>
         </nav>
 
-        <div className="flex items-center gap-4 text-sm">
+        <div className="ml-auto flex shrink-0 items-center gap-4 text-sm">
           {session?.user && currentUser ? (
             <>
               {wallet && (
@@ -67,15 +95,24 @@ export async function Navbar() {
 
                   <span className="text-zinc-700">|</span>
 
-                  {/* GEM */}
-                  <span className="flex items-center gap-1.5 font-bold text-purple-400">
+                  {/* CRÉDITO */}
+                  <span className="flex items-center gap-1.5 font-bold text-purple-400" title={CREDIT_LABEL_PLURAL}>
                     <Gem className="w-4 h-4 text-purple-400" />
                     <span>{wallet.cash}</span>
                   </span>
                 </div>
               )}
 
-              <span className="text-gray-400">{session.user.email}</span>
+              <Link
+                href="/account"
+                title="Minha conta"
+                className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+              >
+                <Avatar {...toAvatarProps(currentUser)} size={28} />
+                <span className="hidden sm:inline">
+                  <PlayerName {...toPlayerNameProps(currentUser)} className="font-semibold" />
+                </span>
+              </Link>
 
               <form
                 action={async () => {

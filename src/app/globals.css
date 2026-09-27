@@ -67,3 +67,83 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* ===================== ESTILOS DE NICK (itens de personalização) =====================
+   Cada classe .nick-<efeito> corresponde a um efeito de NAME_EFFECTS em
+   src/lib/cosmetic-types.ts. Para criar um efeito novo, adicione as duas coisas. */
+
+.nick-effect {
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+}
+
+.nick-gold {
+  background-image: linear-gradient(90deg, #b8860b, #ffd700, #fff8dc, #ffd700, #b8860b);
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.55));
+  animation: nick-shimmer 3s linear infinite;
+}
+
+.nick-rainbow {
+  background-image: linear-gradient(90deg, #ff5f6d, #ffc371, #f9f871, #47e6a1, #4fa3ff, #b86bff, #ff5f6d);
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.35));
+  animation: nick-shimmer 4s linear infinite;
+}
+
+.nick-fire {
+  background-image: linear-gradient(0deg, #ff3d00, #ff9100, #ffea00, #ff9100, #ff3d00);
+  background-size: auto 200%;
+  filter: drop-shadow(0 0 5px rgba(255, 110, 0, 0.7));
+  animation: nick-flame 1.6s ease-in-out infinite alternate;
+}
+
+.nick-neon {
+  background-image: linear-gradient(90deg, #00e5ff, #7df9ff, #00e5ff);
+  animation: nick-shimmer 3s linear infinite, nick-neon-pulse 2s ease-in-out infinite;
+}
+
+.nick-galaxy {
+  background-image: linear-gradient(90deg, #7b2ff7, #f107a3, #3a86ff, #c77dff, #7b2ff7);
+  filter: drop-shadow(0 0 5px rgba(193, 125, 255, 0.6));
+  animation: nick-shimmer 5s linear infinite;
+}
+
+.nick-ice {
+  background-image: linear-gradient(90deg, #a5f3fc, #ffffff, #67e8f9, #e0f2fe, #a5f3fc);
+  filter: drop-shadow(0 0 4px rgba(165, 243, 252, 0.6));
+  animation: nick-shimmer 3.5s linear infinite;
+}
+
+@keyframes nick-shimmer {
+  to {
+    background-position: 200% center;
+  }
+}
+
+@keyframes nick-flame {
+  from {
+    background-position: center 0%;
+    filter: drop-shadow(0 0 3px rgba(255, 110, 0, 0.5));
+  }
+  to {
+    background-position: center 100%;
+    filter: drop-shadow(0 0 8px rgba(255, 60, 0, 0.9));
+  }
+}
+
+@keyframes nick-neon-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px #00e5ff) drop-shadow(0 0 6px rgba(0, 229, 255, 0.6));
+  }
+  50% {
+    filter: drop-shadow(0 0 4px #00e5ff) drop-shadow(0 0 12px rgba(0, 229, 255, 0.9));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nick-effect {
+    animation: none !important;
+  }
+}

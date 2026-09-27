@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/deck-builder";
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/jornal";
   const verified = searchParams.get("verified") === "1";
 
   const [identifier, setIdentifier] = useState("");
