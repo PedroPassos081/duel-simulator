@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "@/app/globals.css";
 import { Navbar } from "@/components/Navbar";
 import { ConditionalNavbar } from "@/components/ConditionalNavbar";
+import { ConditionalBackdrop } from "@/components/theme/ConditionalBackdrop";
 
 export const metadata: Metadata = {
   title: "Master Duelist",
@@ -12,6 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-br">
       <body className="min-h-screen bg-edison-bg text-gray-100">
+        <ConditionalBackdrop />
         <ConditionalNavbar>
           <Navbar />
         </ConditionalNavbar>

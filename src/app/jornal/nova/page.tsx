@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getViewer } from "@/lib/admin-server";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 import { PostForm } from "../PostForm";
 
 export default async function NewPostPage() {
@@ -8,9 +9,9 @@ export default async function NewPostPage() {
   if (!viewer?.isAdmin) notFound();
 
   return (
-    <div className="container mx-auto max-w-3xl px-4 py-8">
+    <GlassPanel className="max-w-3xl">
       <h1 className="mb-6 text-3xl font-bold tracking-tight text-zinc-100">Nova publicação</h1>
       <PostForm />
-    </div>
+    </GlassPanel>
   );
 }

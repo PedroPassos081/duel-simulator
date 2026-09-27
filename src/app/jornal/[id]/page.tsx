@@ -8,6 +8,7 @@ import { RoleBadge } from "@/components/RoleBadge";
 import { CommentsSection } from "@/components/CommentsSection";
 import { PostAdminActions } from "./PostAdminActions";
 import { MiniCalendar } from "@/components/MiniCalendar";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 import { formatDate } from "@/lib/dates";
 import { POST_TYPES, getPost, getPostComments } from "@/lib/news";
 
@@ -23,7 +24,7 @@ export default async function PostPage({ params }: { params: { id: string } }) {
   const postType = POST_TYPES[post.type as keyof typeof POST_TYPES] ?? POST_TYPES.news;
 
   return (
-    <div className="container mx-auto max-w-6xl px-4 py-8">
+    <GlassPanel className="max-w-6xl">
       <Link href="/jornal" className="mb-5 inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200">
         <ArrowLeft className="w-4 h-4" />
         Voltar ao jornal
@@ -71,6 +72,6 @@ export default async function PostPage({ params }: { params: { id: string } }) {
 
         <MiniCalendar />
       </div>
-    </div>
+    </GlassPanel>
   );
 }

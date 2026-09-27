@@ -4,6 +4,7 @@ import { EVENT_TYPES, eventTypeInfo, getEventsInMonth } from "@/lib/calendar";
 import { MONTH_NAMES, currentYearMonth, dayKey, dayKeyOf, formatDate, monthGrid } from "@/lib/dates";
 import { EyeOfHorus } from "@/components/theme/EgyptIcons";
 import { Cartouche, EgyptBand } from "@/components/theme/EgyptDecor";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: { m
   }
 
   return (
-    <div className="container mx-auto max-w-6xl px-4 py-8">
+    <GlassPanel className="max-w-6xl">
       {/* CABEÇALHO */}
       <div className="mb-6">
         <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight text-zinc-100">
@@ -187,6 +188,6 @@ export default async function CalendarPage({ searchParams }: { searchParams: { m
           </ol>
         )}
       </section>
-    </div>
+    </GlassPanel>
   );
 }

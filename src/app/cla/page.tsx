@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CircleDollarSign, Gem, Shield, Users } from "lucide-react";
 import { CLAN_MAX_MEMBERS, canManageInvites, decideSettings, decideVault, roleLabel } from "@/lib/clans/roles";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 import type { Act, ClanData, NoClanData } from "./types";
 import {
   DonationTab,
@@ -48,11 +49,11 @@ export default function ClanPage() {
   );
 
   if (!data) {
-    return <div className="container mx-auto max-w-5xl px-4 py-8 text-sm text-zinc-400">Carregando...</div>;
+    return <GlassPanel className="max-w-5xl text-sm text-zinc-400">Carregando...</GlassPanel>;
   }
 
   return (
-    <div className="container mx-auto max-w-5xl px-4 py-8">
+    <GlassPanel className="max-w-5xl">
       {feedback && (
         <div
           className={`mb-5 rounded-lg border px-4 py-3 text-sm ${
@@ -65,7 +66,7 @@ export default function ClanPage() {
         </div>
       )}
       {data.clan ? <ClanView data={data} act={act} /> : <NoClanView data={data} act={act} />}
-    </div>
+    </GlassPanel>
   );
 }
 

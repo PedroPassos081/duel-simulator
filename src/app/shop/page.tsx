@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { CircleDollarSign, Gem, Layers, Package, Sparkles } from "lucide-react";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 import { StructureDecksTab } from "./StructureDecksTab";
 import type { Card } from "@/types/card";
 import {
@@ -35,7 +37,7 @@ export default function ShopPage() {
   const [tab, setTab] = useState<ShopTab>("structures");
 
   return (
-    <div className="container mx-auto max-w-7xl px-4 py-8">
+    <GlassPanel className="max-w-7xl">
       <div className="mb-6 border-b border-zinc-800 pb-5">
         <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Loja</h1>
         <p className="mt-1 text-sm text-zinc-400">Decks prontos, cartas avulsas e, em breve, cosméticos.</p>
@@ -71,7 +73,7 @@ export default function ShopPage() {
           <p className="mt-1 text-sm text-zinc-500">Sleeves, playmats, molduras e estilos de nick.</p>
         </div>
       )}
-    </div>
+    </GlassPanel>
   );
 }
 
@@ -429,7 +431,8 @@ function CardsTab() {
         const goldAllowed = canBuyNextWithGold(selectedListing, selectedListing.ownedQuantity);
         const goldLimit = goldCopyLimit(selectedListing);
 
-        return (
+        // Vai para o body: dentro do GlassPanel (backdrop-filter) o `fixed` ficaria preso à caixa do painel
+        return createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
             <div 
               className="absolute inset-0" 
@@ -573,7 +576,8 @@ function CardsTab() {
                 </div>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
     </div>

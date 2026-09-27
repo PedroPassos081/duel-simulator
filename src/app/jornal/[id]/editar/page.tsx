@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/admin-server";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 import { PostForm } from "../../PostForm";
 
 export default async function EditPostPage({ params }: { params: { id: string } }) {
@@ -11,7 +12,7 @@ export default async function EditPostPage({ params }: { params: { id: string } 
   if (!post) notFound();
 
   return (
-    <div className="container mx-auto max-w-3xl px-4 py-8">
+    <GlassPanel className="max-w-3xl">
       <h1 className="mb-6 text-3xl font-bold tracking-tight text-zinc-100">Editar publicação</h1>
       <PostForm
         postId={post.id}
@@ -24,6 +25,6 @@ export default async function EditPostPage({ params }: { params: { id: string } 
           pinned: post.pinned,
         }}
       />
-    </div>
+    </GlassPanel>
   );
 }

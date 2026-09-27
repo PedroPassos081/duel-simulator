@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MessageCircle, Newspaper, Pin, Plus } from "lucide-react";
 import { MiniCalendar } from "@/components/MiniCalendar";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 import { getViewer } from "@/lib/admin-server";
 import { formatDate } from "@/lib/dates";
 import { POST_TYPES, isPostType, listPosts } from "@/lib/news";
@@ -17,7 +18,7 @@ export default async function JornalPage({ searchParams }: { searchParams: { tip
   ];
 
   return (
-    <div className="container mx-auto max-w-6xl px-4 py-8">
+    <GlassPanel className="max-w-6xl">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-zinc-800 pb-5">
         <div>
           <h1 className="flex items-center gap-2 text-3xl font-bold text-zinc-100 tracking-tight">
@@ -114,6 +115,6 @@ export default async function JornalPage({ searchParams }: { searchParams: { tip
 
         <MiniCalendar />
       </div>
-    </div>
+    </GlassPanel>
   );
 }

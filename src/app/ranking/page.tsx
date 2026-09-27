@@ -3,6 +3,7 @@ import { CalendarRange, Trophy } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { Avatar } from "@/components/Avatar";
 import { PlayerName } from "@/components/PlayerName";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 import {
   RANKING_CATEGORIES,
   RANKING_PERIODS,
@@ -33,7 +34,7 @@ export default async function RankingPage({
   const viewerInTop = ranking.viewer && ranking.entries.some((e) => e.userId === ranking.viewer!.userId);
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-8">
+    <GlassPanel className="max-w-4xl">
       {/* CABEÇALHO */}
       <div className="mb-6 border-b border-zinc-800 pb-5">
         <h1 className="flex items-center gap-2 text-3xl font-bold text-zinc-100 tracking-tight">
@@ -116,7 +117,7 @@ export default async function RankingPage({
           </ol>
         </section>
       )}
-    </div>
+    </GlassPanel>
   );
 }
 

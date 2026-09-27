@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Lock, Palette, Upload, UserRound } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { PlayerName } from "@/components/PlayerName";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 import { COSMETIC_TYPES, RARITY_LABELS, SOURCE_LABELS } from "@/lib/cosmetic-types";
 
 interface Cosmetic {
@@ -94,14 +95,14 @@ export default function AccountPage() {
   }, []);
 
   if (!account) {
-    return <div className="container mx-auto max-w-4xl px-4 py-8 text-sm text-zinc-400">Carregando...</div>;
+    return <GlassPanel className="max-w-4xl text-sm text-zinc-400">Carregando...</GlassPanel>;
   }
 
   const frameUrl = account.cosmetics.find((c) => c.id === account.equipped.frame)?.imageUrl;
   const nameEffect = account.cosmetics.find((c) => c.id === account.equipped.name_style)?.effect;
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-8">
+    <GlassPanel className="max-w-4xl">
       {/* CABEÇALHO */}
       <div className="flex items-center gap-4 mb-6 border-b border-zinc-800 pb-5">
         <Avatar image={account.image} name={account.username ?? account.name} size={64} frameUrl={frameUrl} />
@@ -144,7 +145,7 @@ export default function AccountPage() {
       ) : (
         <CustomizeSection account={account} onSaved={loadAccount} />
       )}
-    </div>
+    </GlassPanel>
   );
 }
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, ChevronDown, Layers3, Swords, Users } from "lucide-react";
 import { MillenniumPyramid } from "@/components/theme/EgyptIcons";
+import { GlassPanel } from "@/components/theme/PageBackdrop";
 
 type RoomId = "slifer" | "obelisk";
 
@@ -146,14 +147,14 @@ export default function RandomPage() {
   }
 
   if (!data) {
-    return <div className="container mx-auto max-w-5xl px-4 py-8 text-sm text-zinc-400">Carregando...</div>;
+    return <GlassPanel className="max-w-5xl text-sm text-zinc-400">Carregando...</GlassPanel>;
   }
 
   const roomsById = Object.fromEntries(data.rooms.map((r) => [r.id, r])) as Record<RoomId, Room>;
   const canJoinBoth = Boolean(data.deck) && data.rooms.every((r) => r.deckIssues.length === 0);
 
   return (
-    <div className="container mx-auto max-w-5xl px-4 py-8">
+    <GlassPanel className="max-w-5xl">
       {/* CABEÇALHO */}
       <div className="mb-6 flex flex-col gap-4 border-b border-zinc-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -241,7 +242,7 @@ export default function RandomPage() {
           )}
         </>
       )}
-    </div>
+    </GlassPanel>
   );
 }
 
