@@ -90,7 +90,11 @@ export async function POST(
       status: "active",
       startedAt: new Date(),
       currentTurn: 1,
-      currentPhase: "draw",
+      // O primeiro jogador não compra no turno 1 e o OCGCore já processa
+      // Draw/Standby automaticamente até a primeira decisão real (Main
+      // Phase 1) em createOcgDuelSession. Começar direto em "main1" evita
+      // dois cliques em "Próxima fase" que não fazem nada no motor.
+      currentPhase: "main1",
       firstPlayerId,
       engineState: {
         players: enginePlayers,

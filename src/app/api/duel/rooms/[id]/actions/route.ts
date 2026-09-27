@@ -4,10 +4,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   isDuelGameState,
+  type DuelChainState,
   type DuelGameState,
   type DuelPlayerState,
 } from "@/lib/duel/game-state";
 import {
+  getOcgDuelSessionSnapshot,
   getOcgLegalActions,
   passOcgChain,
   performOcgAttack,
@@ -53,12 +55,14 @@ const actionSchema = z.discriminatedUnion("type", [
     zone: z.number().int().min(0).max(4),
   }),
   z.object({
-    type: z.enum(["summon", "set_monster", "activate"]),
+    type: z.enum(["summon", "set_monster"]),
     cardId: z.number().int().positive(),
     zone: z.number().int().min(0).max(5),
   }),
+  // Magias/Armadilhas não levam zona: o OCGCore pede a zona depois, com um
+  // MESSAGE_SELECT_PLACE que o cliente responde como uma decisão comum.
   z.object({
-    type: z.literal("set_spell_trap"),
+    type: z.enum(["set_spell_trap", "activate"]),
     cardId: z.number().int().positive(),
   }),
 ]);
@@ -92,6 +96,67 @@ function advanceChain(
   }
   delete state.chain;
   return "resolved" as const;
+}
+
+type ChainLink = DuelChainState["links"][number];
+
+// O OCGCore só para numa SELECT_CHAIN opcional quando alguém tem um efeito
+// relevante para ativar (ex.: Kalut durante o cálculo de dano). Se o motor
+// está esperando essa resposta e ainda não existe uma corrente visível, abrimos
+// uma janela de resposta — sem elos quando nada foi ativado ainda.
+function openPendingChainWindow(
+  state: DuelGameState,
+  matchId: string,
+  sourceLink?: ChainLink
+) {
+  if (state.chain) return;
+  const snapshot = getOcgDuelSessionSnapshot(matchId);
+  if (
+    snapshot?.pendingMessageType !== MESSAGE_SELECT_CHAIN ||
+    !snapshot.pendingPlayerId
+  ) {
+    return;
+  }
+  state.chain = {
+    links: sourceLink ? [sourceLink] : [],
+    awaitingPlayerId: snapshot.pendingPlayerId,
+    deadlineAt: chainDeadline(),
+  };
+  delete state.pendingChainSource;
+}
+
+// Depois que a corrente resolve, Magias/Armadilhas não persistentes que ainda
+// estejam no campo vão para o Cemitério (caso o motor não tenha informado o
+// movimento). Cartas que já saíram do campo — movidas pelo motor, ou efeitos
+// ativados da mão/monstros, como o Kalut — não são tocadas.
+async function settleResolvedLinks(
+  state: DuelGameState,
+  links: ChainLink[],
+  events: OcgStateEvent[]
+) {
+  for (const link of links) {
+    const controller = state.players[link.playerId];
+    if (!controller) continue;
+    const fieldIndex = controller.spellTraps.findIndex(
+      (entry) => entry.cardId === link.cardId
+    );
+    if (fieldIndex < 0) continue;
+    const movedByCore = events.some(
+      (event) =>
+        event.type === "move" &&
+        event.cardId === link.cardId &&
+        event.to.location === 16
+    );
+    if (movedByCore) continue;
+    const card = await prisma.card.findUnique({ where: { id: link.cardId } });
+    if (!card) continue;
+    const persistent = ["continuous", "field", "equip"].some((kind) =>
+      card.type.toLowerCase().includes(kind)
+    );
+    if (persistent) continue;
+    controller.spellTraps.splice(fieldIndex, 1);
+    controller.graveyard.push(link.cardId);
+  }
 }
 
 function nextPhase(current: string, turn: number) {
@@ -200,6 +265,8 @@ function applyOcgEvents(state: DuelGameState, events: OcgStateEvent[]) {
       phase = phaseFromOcg(event.phase) ?? phase;
       continue;
     }
+
+    if (event.type === "chain_end") continue;
 
     if (event.type === "win") {
       state.winnerId = event.playerId;
@@ -318,6 +385,13 @@ export async function POST(
   }
 
   const state = structuredClone(room.engineState) as DuelGameState;
+  // Se o motor ficou esperando uma resposta de corrente sem uma janela visível
+  // (ex.: estado salvo antes desta correção), recria a janela antes de tudo e
+  // já salva, para o prazo de 20s valer mesmo que esta ação seja recusada.
+  if (!state.chain) {
+    openPendingChainWindow(state, room.id);
+    if (state.chain) await persistDuelState(room.id, state);
+  }
   if (parsed.data.type === "ocg_decision") {
     const pendingChainResponderId = state.pendingChainSource
       ? room.players.find(
@@ -341,8 +415,13 @@ export async function POST(
           : pendingChainResponderId,
       });
       if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
-      const resolvedPhase = applyOcgEvents(state, ocgResult.events ?? []);
+      const decisionEvents = ocgResult.events ?? [];
+      const resolvedPhase = applyOcgEvents(state, decisionEvents);
       if (state.chain) {
+        if (decisionEvents.some((event) => event.type === "chain_end")) {
+          await settleResolvedLinks(state, state.chain.links, decisionEvents);
+          state.chain.links = [];
+        }
         advanceChain(
           state,
           ocgResult.pendingMessageType ?? null,
@@ -363,6 +442,9 @@ export async function POST(
           delete state.pendingChainSource;
         }
       }
+      // Ex.: escolher o alvo do ataque leva ao cálculo de dano, onde o Kalut
+      // pode ser ativado — o motor para ali e precisamos mostrar a janela.
+      openPendingChainWindow(state, room.id);
       await persistDuelState(room.id, state, resolvedPhase);
       return NextResponse.json({ ok: true, decisionResolved: true });
     } catch (error) {
@@ -393,8 +475,13 @@ export async function POST(
           cardId: parsed.data.cardId,
         });
         if (!ocgResult) throw new Error("A sessão do OCGCore não está ativa.");
-        const resolvedPhase = applyOcgEvents(state, ocgResult.events ?? []);
+        const activationEvents = ocgResult.events ?? [];
+        const resolvedPhase = applyOcgEvents(state, activationEvents);
         state.chain.links.push({ playerId: userId, cardId: parsed.data.cardId });
+        if (activationEvents.some((event) => event.type === "chain_end")) {
+          await settleResolvedLinks(state, state.chain.links, activationEvents);
+          state.chain.links = [];
+        }
         const chainStatus = advanceChain(
           state,
           ocgResult.pendingMessageType ?? null,
@@ -436,7 +523,6 @@ export async function POST(
       );
     }
 
-    const links = state.chain.links;
     const respondingPlayerId = state.chain.awaitingPlayerId;
     const ocgResult = await passOcgChain(room.id, respondingPlayerId);
     if (!ocgResult) {
@@ -447,6 +533,14 @@ export async function POST(
     }
     const ocgEvents = ocgResult?.events ?? [];
     const resolvedPhase = applyOcgEvents(state, ocgEvents);
+    // A corrente resolveu, mas o motor pode já ter aberto outra janela
+    // relevante (ex.: o cálculo de dano logo depois): os elos antigos não
+    // valem mais para essa nova janela.
+    if (ocgEvents.some((event) => event.type === "chain_end")) {
+      await settleResolvedLinks(state, state.chain.links, ocgEvents);
+      state.chain.links = [];
+    }
+    const links = state.chain.links;
     const chainStatus = advanceChain(
       state,
       ocgResult.pendingMessageType ?? null,
@@ -456,27 +550,7 @@ export async function POST(
       await persistDuelState(room.id, state, resolvedPhase);
       return NextResponse.json({ ok: true, chainStatus });
     }
-    for (const link of links) {
-      const controller = state.players[link.playerId];
-      const card = await prisma.card.findUnique({ where: { id: link.cardId } });
-      if (!card) continue;
-      const persistent = ["continuous", "field", "equip"].some((kind) =>
-        card.type.toLowerCase().includes(kind)
-      );
-      const movedByCore = ocgEvents.some(
-        (event) =>
-          event.type === "move" &&
-          event.cardId === link.cardId &&
-          event.to.location === 16
-      );
-      if (!persistent && !movedByCore) {
-        const fieldIndex = controller.spellTraps.findIndex(
-          (entry) => entry.cardId === link.cardId
-        );
-        if (fieldIndex >= 0) controller.spellTraps.splice(fieldIndex, 1);
-        controller.graveyard.push(link.cardId);
-      }
-    }
+    await settleResolvedLinks(state, links, ocgEvents);
     await persistDuelState(room.id, state, resolvedPhase);
     return NextResponse.json({ ok: true, chainResolved: true });
   }
@@ -497,6 +571,7 @@ export async function POST(
   }
   const player = state.players[userId] as DuelPlayerState;
   let phase = room.currentPhase;
+  let chainSource: ChainLink | undefined;
 
   if (parsed.data.type === "next_phase") {
     const next = nextPhase(phase, state.turn);
@@ -645,6 +720,13 @@ export async function POST(
     if (!card) {
       return NextResponse.json({ error: "Carta não encontrada." }, { status: 404 });
     }
+    if (
+      parsed.data.type === "activate" ||
+      parsed.data.type === "summon" ||
+      parsed.data.type === "special_summon"
+    ) {
+      chainSource = { playerId: userId, cardId: card.id };
+    }
 
     if (
       parsed.data.type === "summon" ||
@@ -682,32 +764,12 @@ export async function POST(
       parsed.data.type === "set_spell_trap" ||
       parsed.data.type === "activate"
     ) {
-      const fieldSpell = `${card.type} ${card.race ?? ""}`
-        .toLowerCase()
-        .includes("field");
-      if (
-        parsed.data.type === "activate" &&
-        ((fieldSpell && selectedZone !== 5) ||
-          (!fieldSpell && selectedZone === 5))
-      ) {
-        return NextResponse.json(
-          {
-            error: fieldSpell
-              ? "Magias de Campo devem ser colocadas na Zona de Campo."
-              : "Esta carta deve usar uma zona de Spell/Trap.",
-          },
-          { status: 409 }
-        );
-      }
       try {
         const ocgResult = await performOcgSpellAction({
           matchId: room.id,
           userId,
           action: parsed.data.type,
           cardId: parsed.data.cardId,
-          zone:
-            parsed.data.type === "activate" ? selectedZone : undefined,
-          fieldSpell,
           preserveOptionalChain:
             opponentHasSetSpellTrap && parsed.data.type === "activate",
           preserveOptionalChainForUserId: opponentId,
@@ -754,6 +816,9 @@ export async function POST(
     }
   }
 
+  // Ataques, mudanças de fase e o fim do turno também podem parar numa janela
+  // relevante (ex.: Kalut quando o ataque vai direto para o cálculo de dano).
+  openPendingChainWindow(state, room.id, chainSource);
   await persistDuelState(room.id, state, phase);
   return NextResponse.json({ ok: true, currentTurn: state.turn, currentPhase: phase });
 }

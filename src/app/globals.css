@@ -5,3 +5,65 @@
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+
+/* Tela de fim de duelo (DuelResultScreen em src/app/duel/play/page.tsx). */
+@keyframes result-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) translateY(24px);
+    filter: blur(8px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.03) translateY(0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Confete (vitória) e brasas (derrota): cada partícula define --drift e --spin. */
+@keyframes particle-fall {
+  0% {
+    transform: translate3d(0, -12vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--drift, 0px), 105vh, 0) rotate(var(--spin, 360deg));
+    opacity: 0;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes title-shine {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
+@keyframes result-rays-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

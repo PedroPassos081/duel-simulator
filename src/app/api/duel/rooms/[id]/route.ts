@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isDuelGameState } from "@/lib/duel/game-state";
+import { isDuelGameState, type DuelChainState } from "@/lib/duel/game-state";
 import {
   getOcgDuelSessionSnapshot,
   getOcgAttackableMonsters,
@@ -11,6 +11,8 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const MESSAGE_SELECT_CHAIN = 16;
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
@@ -115,6 +117,22 @@ export async function GET(
   const pendingDecision = getOcgPendingDecision(room.id, userId);
   const ocgLegalActions = getOcgLegalActions(room.id, userId);
   const attackableMonsters = getOcgAttackableMonsters(room.id, userId);
+  const ocgSnapshot = getOcgDuelSessionSnapshot(room.id);
+  // Janela de resposta: a corrente salva ou, se o motor está esperando uma
+  // SELECT_CHAIN que ainda não foi registrada, uma janela sem elos.
+  const chainState: DuelChainState | undefined =
+    storedState?.chain ??
+    (ocgSnapshot?.pendingMessageType === MESSAGE_SELECT_CHAIN &&
+    ocgSnapshot.pendingPlayerId
+      ? { links: [], awaitingPlayerId: ocgSnapshot.pendingPlayerId }
+      : undefined);
+  const chainOptionIds =
+    chainState?.awaitingPlayerId === userId
+      ? Object.entries(ocgLegalActions ?? {})
+          .filter(([, actions]) => actions.includes("activate"))
+          .map(([cardId]) => Number(cardId))
+          .filter(Number.isInteger)
+      : [];
   const specialSummonCardIds = Object.entries(ocgLegalActions ?? {})
     .filter(([, actions]) => actions.includes("special_summon"))
     .map(([cardId]) => Number(cardId))
@@ -153,6 +171,15 @@ export async function GET(
           .map((entry) => entry.cardId) ?? []),
         ...decisionCardIds,
         ...specialSummonCardIds,
+        // Cartas ativadas numa corrente são públicas; as opções de resposta
+        // são sempre do próprio jogador.
+        ...(chainState?.links.map((link) => link.cardId) ?? []),
+        ...chainOptionIds,
+        // Cemitério e zona de banimento são públicos para os dois jogadores.
+        ...ownState.graveyard,
+        ...ownState.banished,
+        ...(opponentState?.graveyard ?? []),
+        ...(opponentState?.banished ?? []),
       ]
     : [];
   const visibleCards = ownState
@@ -188,6 +215,24 @@ export async function GET(
     }
   }
 
+  const lastChainLink = chainState?.links[chainState.links.length - 1];
+  const chainView = chainState
+    ? {
+        card: lastChainLink ? cardById.get(lastChainLink.cardId) ?? null : null,
+        linkCount: chainState.links.length,
+        awaitingYou: chainState.awaitingPlayerId === userId,
+        controllerId: lastChainLink?.playerId ?? null,
+        deadlineAt: chainState.deadlineAt ?? null,
+        canForceClose:
+          chainState.awaitingPlayerId !== userId &&
+          Boolean(chainState.deadlineAt) &&
+          new Date(chainState.deadlineAt!).getTime() <= Date.now(),
+        options: chainOptionIds
+          .map((cardId) => cardById.get(cardId))
+          .filter(Boolean),
+      }
+    : null;
+
   const fieldView = (
     entries: NonNullable<typeof ownState>["monsters"],
     revealFaceDown: boolean
@@ -212,7 +257,7 @@ export async function GET(
     rpsDeadline: room.rpsDeadline?.toISOString() ?? null,
     rpsWinnerId: room.rpsWinnerId,
     firstPlayerId: room.firstPlayerId,
-    ocgCore: getOcgDuelSessionSnapshot(room.id),
+    ocgCore: ocgSnapshot,
     game:
       ["active", "finished"].includes(room.status) && ownState
         ? {
@@ -230,11 +275,41 @@ export async function GET(
               : [],
             ownDeckCount: ownState.deck.length,
             ownExtraCount: ownState.extra.length,
+            ownGraveyard: ownState.graveyard
+              .map((cardId) => cardById.get(cardId))
+              .filter(Boolean),
+            ownBanished: ownState.banished
+              .map((cardId) => cardById.get(cardId))
+              .filter(Boolean),
             opponentHandCount: opponentState?.hand.length ?? 0,
             opponentDeckCount: opponentState?.deck.length ?? 0,
             opponentExtraCount: opponentState?.extra.length ?? 0,
+            opponentGraveyard: (opponentState?.graveyard ?? [])
+              .map((cardId) => cardById.get(cardId))
+              .filter(Boolean),
+            opponentBanished: (opponentState?.banished ?? [])
+              .map((cardId) => cardById.get(cardId))
+              .filter(Boolean),
             ownLifePoints: ownState.lifePoints ?? 8_000,
             opponentLifePoints: opponentState?.lifePoints ?? 8_000,
+            ownUser: {
+              nickname:
+                room.players.find((player) => player.userId === userId)?.user
+                  .username ??
+                room.players.find((player) => player.userId === userId)?.user
+                  .name ??
+                "Duelista",
+              image:
+                room.players.find((player) => player.userId === userId)?.user
+                  .image ?? null,
+            },
+            opponentUser: {
+              nickname:
+                opponentPlayer?.user.username ??
+                opponentPlayer?.user.name ??
+                "Oponente",
+              image: opponentPlayer?.user.image ?? null,
+            },
             winnerId: storedState.winnerId ?? null,
             youWon: storedState.winnerId
               ? storedState.winnerId === userId
@@ -287,29 +362,17 @@ export async function GET(
                             card: cardById.get(candidate.cardId) ?? null,
                           })),
                         }
-                      : pendingDecision
+                      : pendingDecision.type === "yes_no"
+                        ? {
+                            ...pendingDecision,
+                            card:
+                              typeof pendingDecision.cardId === "number"
+                                ? cardById.get(pendingDecision.cardId) ?? null
+                                : null,
+                          }
+                        : pendingDecision
               : null,
-            chain: storedState.chain
-              ? {
-                  card:
-                    cardById.get(
-                      storedState.chain.links[
-                        storedState.chain.links.length - 1
-                      ].cardId
-                    ) ?? null,
-                  linkCount: storedState.chain.links.length,
-                  awaitingYou: storedState.chain.awaitingPlayerId === userId,
-                  controllerId:
-                    storedState.chain.links[
-                      storedState.chain.links.length - 1
-                    ].playerId,
-                  deadlineAt: storedState.chain.deadlineAt ?? null,
-                  canForceClose:
-                    storedState.chain.awaitingPlayerId !== userId &&
-                    Boolean(storedState.chain.deadlineAt) &&
-                    new Date(storedState.chain.deadlineAt!).getTime() <= Date.now(),
-                }
-              : null,
+            chain: chainView,
           }
         : null,
     players: room.players.map((player) => ({

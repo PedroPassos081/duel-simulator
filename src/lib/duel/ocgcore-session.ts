@@ -30,6 +30,7 @@ const MESSAGE_SELECT_UNSELECT_CARD = 26;
 const MESSAGE_WIN = 5;
 const MESSAGE_NEW_TURN = 40;
 const MESSAGE_NEW_PHASE = 41;
+const MESSAGE_CHAIN_END = 74;
 const RESPONSE_SELECT_IDLECMD = 1;
 const RESPONSE_SELECT_BATTLECMD = 0;
 const RESPONSE_SELECT_CHAIN = 8;
@@ -54,7 +55,6 @@ const BATTLE_TO_END_PHASE = 3;
 const BATTLE_ATTACK = 1;
 const LOCATION_MZONE = 4;
 const LOCATION_SZONE = 8;
-const LOCATION_FZONE = 256;
 const MESSAGE_MOVE = 50;
 const MESSAGE_POS_CHANGE = 53;
 const MESSAGE_DRAW = 90;
@@ -108,6 +108,7 @@ export type OcgStateEvent =
     }
   | { type: "turn"; playerId: string }
   | { type: "phase"; phase: number }
+  | { type: "chain_end" }
   | { type: "win"; playerId: string; reason: number };
 
 export type OcgPendingDecision =
@@ -214,6 +215,16 @@ async function loadCards(codes: number[]) {
   return cards;
 }
 
+// O OCGCore abre uma SELECT_CHAIN em quase todo momento do duelo, mesmo sem
+// nada para ativar. Ela só é "relevante" quando há cartas ativáveis e o motor
+// marca pelo menos uma como própria do momento (spe_count > 0) — por exemplo,
+// Blackwing - Kalut the Moon Shadow durante o cálculo de dano. É o mesmo
+// critério que YGOPro/EDOPro usam para decidir quando perguntar ao jogador.
+function isRelevantChainWindow(message: Record<string, unknown>) {
+  const selects = Array.isArray(message.selects) ? message.selects : [];
+  return selects.length > 0 && Number(message.spe_count) > 0;
+}
+
 async function processUntilDecision(
   core: Awaited<ReturnType<typeof loadOcgCore>>,
   session: OcgSession,
@@ -240,9 +251,12 @@ async function processUntilDecision(
             message.type <= 26
         ) ?? null;
       session.pendingMessage = pending;
+      // Janelas relevantes nunca são passadas automaticamente: o jogador
+      // precisa poder ativar o efeito (a rota abre a janela de resposta).
       if (
         pending?.type === MESSAGE_SELECT_CHAIN &&
         pending.forced !== true &&
+        !isRelevantChainWindow(pending) &&
         (autoPassOptionalChain ||
           (preserveOptionalChainForUserId !== undefined &&
             session.players[Number(pending.player)] !==
@@ -373,6 +387,9 @@ function stateEventsSince(session: OcgSession, start: number): OcgStateEvent[] {
     }
     if (message.type === MESSAGE_NEW_PHASE && typeof message.phase === "number") {
       events.push({ type: "phase", phase: message.phase });
+    }
+    if (message.type === MESSAGE_CHAIN_END) {
+      events.push({ type: "chain_end" });
     }
     if (
       message.type === MESSAGE_WIN &&
@@ -566,8 +583,13 @@ function pendingPlaces(
     location: number;
     sequence: number;
   }> = [];
-  for (let controller = 0; controller < 2; controller += 1) {
-    const controllerOffset = controller * 16;
+  // A field_mask é relativa a quem está escolhendo: os bits 0-15 são as zonas
+  // desse jogador e os bits 16-31 as do adversário. A resposta, por outro
+  // lado, usa o índice absoluto do jogador (session.players).
+  const chooser = Number(message.player) === 1 ? 1 : 0;
+  for (let side = 0; side < 2; side += 1) {
+    const controller = side === 0 ? chooser : 1 - chooser;
+    const controllerOffset = side * 16;
     for (const [location, start, zones] of [
       [LOCATION_MZONE, 0, 7],
       [LOCATION_SZONE, 8, 8],
@@ -1147,8 +1169,6 @@ export async function performOcgSpellAction(input: {
   userId: string;
   action: "set_spell_trap" | "activate";
   cardId: number;
-  zone?: number;
-  fieldSpell: boolean;
   preserveOptionalChain?: boolean;
   preserveOptionalChainForUserId?: string;
 }) {
@@ -1176,44 +1196,19 @@ export async function performOcgSpellAction(input: {
       action: input.action === "activate" ? IDLE_ACTIVATE : IDLE_SPELL_SET,
       index,
     });
+    // Não tentamos mais adivinhar a zona aqui: se o OCGCore pedir
+    // MESSAGE_SELECT_PLACE em seguida, ele fica pendente e é resolvido pelo
+    // fluxo genérico de decisão (getOcgPendingDecision/performOcgDecision),
+    // que usa os places que o próprio motor informou. Combinar as duas
+    // etapas numa só chamada exigia adivinhar a sequência da zona no cliente
+    // e, quando errava, o motor ficava esperando uma resposta que nunca
+    // chegava — travando o duelo até o processo ser reiniciado.
     await processUntilDecision(
       core,
       session,
       input.action !== "activate" || !input.preserveOptionalChain,
       input.preserveOptionalChainForUserId
     );
-    const placeRequest = getPendingMessage(session);
-    if (
-      placeRequest?.type === MESSAGE_SELECT_PLACE &&
-      Number.isInteger(input.zone)
-    ) {
-      const allowedPlace = pendingPlaces(session, placeRequest).find(
-        (place) =>
-          place.controllerId === input.userId &&
-          place.location ===
-            (input.fieldSpell ? LOCATION_FZONE : LOCATION_SZONE) &&
-          place.sequence === (input.fieldSpell ? 0 : input.zone)
-      );
-      if (!allowedPlace) {
-        throw new Error("Escolha uma das zonas permitidas pelo OCGCore.");
-      }
-      core.duelSetResponse(session.handle, {
-        type: RESPONSE_SELECT_PLACE,
-        places: [
-          {
-            player: Number(placeRequest.player),
-            location: allowedPlace.location,
-            sequence: allowedPlace.sequence,
-          },
-        ],
-      });
-      await processUntilDecision(
-        core,
-        session,
-        input.action !== "activate" || !input.preserveOptionalChain,
-        input.preserveOptionalChainForUserId
-      );
-    }
     return {
       ...getOcgDuelSessionSnapshot(input.matchId),
       events: stateEventsSince(session, eventStart),

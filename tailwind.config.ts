@@ -16,6 +16,38 @@ const config: Config = {
           cash: "#4cc2ff",
         },
       },
+      keyframes: {
+        "card-summon": {
+          "0%": {
+            opacity: "0",
+            transform: "scale(0.35) rotate(-6deg)",
+            filter: "brightness(2.2) saturate(1.3)",
+          },
+          "60%": {
+            opacity: "1",
+            transform: "scale(1.08) rotate(2deg)",
+            filter: "brightness(1.4)",
+          },
+          "100%": {
+            opacity: "1",
+            transform: "scale(1) rotate(0deg)",
+            filter: "brightness(1)",
+          },
+        },
+        "overlay-fade": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "modal-pop": {
+          "0%": { opacity: "0", transform: "scale(0.85) translateY(12px)" },
+          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
+      },
+      animation: {
+        "card-summon": "card-summon 0.45s cubic-bezier(0.16, 1, 0.3, 1)",
+        "overlay-fade": "overlay-fade 0.2s ease-out",
+        "modal-pop": "modal-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+      },
     },
   },
   plugins: [],
