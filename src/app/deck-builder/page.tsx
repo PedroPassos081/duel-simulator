@@ -109,7 +109,7 @@ export default function DeckBuilderPage() {
       </div>
       {message && <p className="rounded-lg border border-edison-border bg-edison-panel px-4 py-3 text-sm text-gray-300">{message}</p>}
       <div className="grid gap-5 xl:grid-cols-[330px_1fr]">
-        <aside className="self-start rounded-2xl border border-edison-border bg-edison-panel p-4 xl:sticky xl:top-4">
+        <aside className="self-start rounded-2xl border border-edison-border bg-edison-panel p-4 xl:sticky xl:top-20">
           <section>
             <h2 className="font-semibold">Main e Side Deck</h2>
             <p className="mb-4 mt-1 text-xs text-gray-500">

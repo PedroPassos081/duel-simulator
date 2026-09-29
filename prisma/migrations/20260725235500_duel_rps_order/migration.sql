@@ -1,0 +1,7 @@
+ALTER TABLE "Match"
+ADD COLUMN "rpsRound" INTEGER NOT NULL DEFAULT 1,
+ADD COLUMN "rpsWinnerId" TEXT,
+ADD COLUMN "firstPlayerId" TEXT;
+
+ALTER TABLE "MatchPlayer"
+ADD COLUMN "rpsChoice" TEXT;

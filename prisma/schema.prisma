@@ -5,9 +5,10 @@
 // ==========================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "library"
 }
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -16,7 +17,7 @@ datasource db {
 // ---------------- CARTAS / BANLIST ----------------
 
 model Card {
-  id          Int      @id
+  id          Int     @id
   name        String
   type        String
   race        String?
@@ -29,6 +30,7 @@ model Card {
 
   banlistEntries BanlistEntry[]
   deckCards      DeckCard[]
+  structureCards StructureDeckCard[]
   shopListing    ShopListing?
   ownerships     UserCardOwnership[]
   purchases      Purchase[]
@@ -55,12 +57,13 @@ model User {
   emailVerified DateTime?
   name          String?
   passwordHash  String?
+  role          String    @default("player") // player | admin (ver src/lib/admin.ts)
   image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   twoFactorSecret  String?
-  twoFactorEnabled Boolean @default(false)
+  twoFactorEnabled Boolean   @default(false)
   lastLoginAt      DateTime?
   lastLoginIp      String?
 
@@ -74,6 +77,16 @@ model User {
   payments             Payment[]
   ownerships           UserCardOwnership[]
   purchases            Purchase[]
+  cosmetics            UserCosmetic[]
+  equippedCosmetics    UserEquippedCosmetic[]
+  queueEntries         MatchQueueEntry[]
+  competitionResults   CompetitionResult[]
+  newsComments         NewsComment[]
+  newsReactions        NewsCommentReaction[]
+  clanMembership       ClanMember?
+  clanJoinRequests     ClanJoinRequest[]
+  structurePurchases   StructureDeckPurchase[]
+  newsPosts            NewsPost[]
 }
 
 model EmailVerificationCode {
@@ -116,18 +129,18 @@ model Session {
 // ---------------- DECKS ----------------
 
 model Deck {
-  id        String     @id @default(cuid())
-  name      String
-  userId    String?
-  user      User?      @relation(fields: [userId], references: [id])
-  format    String     @default("edison")
-  isEquipped Boolean   @default(false)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  cards     DeckCard[]
+  id         String     @id @default(cuid())
+  name       String
+  userId     String?
+  user       User?      @relation(fields: [userId], references: [id])
+  format     String     @default("edison")
+  isEquipped Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  cards      DeckCard[]
 
-  @@index([userId, isEquipped])
   @@unique([userId, name])
+  @@index([userId, isEquipped])
 }
 
 model DeckCard {
@@ -145,26 +158,41 @@ model DeckCard {
 // ---------------- PARTIDAS (preparado para fase futura) ----------------
 
 model Match {
-  id         String        @id @default(cuid())
-  createdAt  DateTime      @default(now())
-  finishedAt DateTime?
-  format     String        @default("edison")
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  format        String    @default("edison") // no Random: sala do duelo (slifer | obelisk)
+  status        String    @default("waiting") // waiting | active | finished | cancelled
+  currentTurn   Int       @default(0)
+  currentPhase  String    @default("waiting")
+  engineState   Json?
+  rpsRound      Int       @default(1)
+  rpsDeadline   DateTime?
+  rpsWinnerId   String?
+  firstPlayerId String?
 
   players MatchPlayer[]
   actions GameAction[]
   replay  Replay?
+
+  @@index([status, createdAt])
 }
 
 model MatchPlayer {
-  id      String  @id @default(cuid())
-  matchId String
-  match   Match   @relation(fields: [matchId], references: [id])
-  userId  String
-  user    User    @relation(fields: [userId], references: [id])
-  deckId  String
-  result  String?
+  id         String   @id @default(cuid())
+  matchId    String
+  match      Match    @relation(fields: [matchId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  deckId     String
+  result     String? // win | loss | draw (definido pelo motor de duelo)
+  rpsChoice  String?
+  lastSeenAt DateTime @default(now())
 
   @@unique([matchId, userId])
+  @@index([matchId])
+  @@index([lastSeenAt])
 }
 
 model GameAction {
@@ -238,10 +266,10 @@ model ShopListing {
   priceCash Int?
   cashOnly  Boolean @default(false)
   active    Boolean @default(true)
-  
-  maxTotal  Int     @default(3) // Limite geral da carta (ex: 1 para limitadas)
-  maxGold   Int     @default(3) // Quantas cópias pode comprar com Gold
-  maxCash   Int     @default(3) // Quantas cópias pode comprar com Cash
+
+  maxTotal Int @default(3) // Limite geral da carta (ex: 1 para limitadas)
+  maxGold  Int @default(2) // Quantas das primeiras cópias podem ser compradas com Gold (0 = só crédito)
+  maxCash  Int @default(3) // Quantas cópias pode comprar com Cash
 }
 
 model UserCardOwnership {
@@ -264,4 +292,332 @@ model Purchase {
   currencyUsed String
   amountPaid   Int
   createdAt    DateTime @default(now())
+}
+
+// ======================= PERSONALIZAÇÃO (COSMÉTICOS) =======================
+// Itens de personalização (sleeves, playmats, molduras...). O jogador só pode
+// equipar itens que possui; eles são dados, premiados ou vendidos pelo jogo.
+
+model Cosmetic {
+  id          String   @id @default(cuid())
+  type        String // sleeve | playmat | frame | name_style (ver src/lib/cosmetic-types.ts)
+  name        String
+  description String?
+  imageUrl    String?
+  effect      String? // só para name_style: id do efeito (gold, rainbow...) — ver NAME_EFFECTS
+  rarity      String   @default("common") // common | rare | epic | legendary
+  priceGold   Int? // null = não vendido com gold
+  priceCash   Int? // null = não vendido com crédito
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  owners   UserCosmetic[]
+  equipped UserEquippedCosmetic[]
+
+  // Preenchido quando o item é exclusivo da versão premium de um Structure Deck
+  structureDeckId String?
+  structureDeck   StructureDeck? @relation(fields: [structureDeckId], references: [id], onDelete: SetNull)
+
+  @@index([type])
+}
+
+model UserCosmetic {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cosmeticId String
+  cosmetic   Cosmetic @relation(fields: [cosmeticId], references: [id])
+  source     String // grant | raffle | reward | purchase
+  acquiredAt DateTime @default(now())
+
+  @@unique([userId, cosmeticId])
+}
+
+model UserEquippedCosmetic {
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String
+  cosmeticId String
+  cosmetic   Cosmetic @relation(fields: [cosmeticId], references: [id])
+
+  @@id([userId, type])
+}
+
+// ======================= RANDOM (FILA DE DUELOS) =======================
+// Um jogador pode aguardar em uma ou mais salas ao mesmo tempo (uma linha por
+// sala). Quando o duelo é encontrado, todas as linhas dele são removidas.
+
+model MatchQueueEntry {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room       String // slifer | obelisk (ver src/lib/duel-rooms.ts)
+  deckId     String
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now()) // atualizado pelo polling; entradas antigas são ignoradas
+
+  @@unique([userId, room])
+  @@index([room, createdAt])
+}
+
+// ======================= RANKING / SEASONS / COMPETIÇÕES =======================
+
+// Período de uma season. A season atual é a que contém a data de hoje.
+model Season {
+  id       String   @id @default(cuid())
+  name     String
+  startsAt DateTime
+  endsAt   DateTime // exclusivo: a season vale até antes deste instante
+
+  @@index([startsAt, endsAt])
+}
+
+// Uma competição (torneio, evento...). Os pontos contam no período em que ela aconteceu.
+model Competition {
+  id          String              @id @default(cuid())
+  name        String
+  description String?
+  heldAt      DateTime
+  createdAt   DateTime            @default(now())
+  results     CompetitionResult[]
+  newsPost    NewsPost?
+
+  @@index([heldAt])
+}
+
+model CompetitionResult {
+  id            String      @id @default(cuid())
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  placement     Int? // colocação final (1 = campeão)
+  points        Int
+
+  @@unique([competitionId, userId])
+  @@index([userId])
+}
+
+// ======================= JORNAL / CALENDÁRIO =======================
+
+model NewsPost {
+  id            String        @id @default(cuid())
+  type          String // news (notícia) | notice (aviso) | tournament (resultado de torneio)
+  title         String
+  summary       String?
+  content       String // texto puro; parágrafos separados por linha em branco
+  imageUrl      String?
+  pinned        Boolean       @default(false) // fixado no topo do jornal
+  competitionId String?       @unique // preenchido nas publicações automáticas de torneio
+  competition   Competition?  @relation(fields: [competitionId], references: [id], onDelete: SetNull)
+  // Quem publicou (Admin). null nas publicações automáticas de torneio
+  authorId      String?
+  author        User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  publishedAt   DateTime      @default(now())
+  comments      NewsComment[]
+
+  @@index([publishedAt])
+}
+
+model NewsComment {
+  id        String                @id @default(cuid())
+  postId    String
+  post      NewsPost              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Respostas ficam em um nível só: respondendo a uma resposta, ela entra no mesmo comentário principal
+  parentId  String?
+  parent    NewsComment?          @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   NewsComment[]         @relation("CommentReplies")
+  content   String
+  createdAt DateTime              @default(now())
+  deletedAt DateTime? // apagado pelo autor: some o texto, ficam as respostas
+  reactions NewsCommentReaction[]
+
+  @@index([postId, createdAt])
+  @@index([parentId])
+}
+
+model NewsCommentReaction {
+  commentId String
+  comment   NewsComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value     Int // 1 = like, -1 = deslike
+
+  @@id([commentId, userId])
+}
+
+model CalendarEvent {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  type        String    @default("event") // tournament | event | update | other
+  startsAt    DateTime
+  endsAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([startsAt])
+}
+
+// ======================= CLÃS =======================
+// Regras de cargos e permissões: src/lib/clans/roles.ts
+
+model Clan {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  // Cofre do clã: recebe 10% dos ganhos dos membros (sem tirar deles), doações e prêmios
+  vaultGold   Int      @default(0)
+  vaultCash   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  members           ClanMember[]
+  joinRequests      ClanJoinRequest[]
+  actionRequests    ClanActionRequest[]
+  vaultTransactions ClanVaultTransaction[]
+  tournaments       ClanTournament[]
+}
+
+model ClanMember {
+  id       String   @id @default(cuid())
+  clanId   String
+  clan     Clan     @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  userId   String   @unique // um clã por jogador
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     String // leader | vice | sub | captain | member
+  joinedAt DateTime @default(now())
+
+  @@index([clanId])
+}
+
+// Pedido de entrada (o jogador pede) ou convite (o clã convida)
+model ClanJoinRequest {
+  id          String   @id @default(cuid())
+  clanId      String
+  clan        Clan     @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String // request | invite
+  invitedById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([clanId, userId])
+  @@index([userId])
+}
+
+// Decisão que depende de aprovação (ex.: vice distribuindo o cofre). Se ninguém
+// responder até expiresAt, é executada automaticamente.
+model ClanActionRequest {
+  id            String    @id @default(cuid())
+  clanId        String
+  clan          Clan      @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  type          String // settings | kick | change_role | distribute | tournament_create | tournament_finalize | tournament_cancel
+  payload       Json
+  summary       String // descrição legível do que será feito
+  requesterId   String
+  targetUserId  String?
+  approverRoles String // cargos que podem aceitar/recusar, separados por vírgula (ex.: "leader,vice")
+  // true: sem resposta até expiresAt, é executada (pedidos do vice e dos capitães).
+  // false: sem resposta, expira sem executar (pedidos dos sub-líderes).
+  autoExecute   Boolean   @default(true)
+  status        String    @default("pending") // pending | executing | executed | rejected | expired | failed
+  expiresAt     DateTime
+  decidedById   String? // null quando executado automaticamente pelo prazo
+  decidedAt     DateTime?
+  resultMessage String?
+  createdAt     DateTime  @default(now())
+
+  @@index([clanId, status])
+  @@index([status, expiresAt])
+}
+
+// Histórico do cofre. Valores positivos entram, negativos saem.
+model ClanVaultTransaction {
+  id           String   @id @default(cuid())
+  clanId       String
+  clan         Clan     @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  userId       String? // quem contribuiu (entradas) ou recebeu (saídas)
+  currency     String // gold | cash
+  amount       Int
+  balanceAfter Int
+  reason       String // ver VAULT_REASONS em src/lib/clans/roles.ts
+  refType      String?
+  refId        String?
+  createdAt    DateTime @default(now())
+
+  @@index([clanId, createdAt])
+  @@index([clanId, userId])
+}
+
+model ClanTournament {
+  id          String    @id @default(cuid())
+  clanId      String
+  clan        Clan      @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  startsAt    DateTime
+  status      String    @default("open") // open | finished | cancelled
+  prizes      Json // [{ placement, gold, cash }] — reservado do cofre na criação
+  results     Json? // [{ placement, userId }]
+  createdById String
+  createdAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  @@index([clanId, status])
+}
+
+// ======================= STRUCTURE DECKS (LOJA) =======================
+// Deck pronto vendido em duas versões: base e premium (base + cosméticos
+// exclusivos: sleeves, playmat e moldura — os Cosmetic com structureDeckId).
+
+model StructureDeck {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  coverCardId Int? // carta cuja arte ilustra o deck na loja
+  active      Boolean @default(true)
+
+  // Preços da versão base (null = não vendido nessa moeda)
+  priceCash Int?
+  priceGold Int?
+  // Versão premium
+  premiumPriceCash Int?
+  premiumPriceGold Int?
+  // Dinheiro real (centavos de R$), preço cheio; o desconto é aplicado por cima
+  moneyPriceCents        Int?
+  premiumMoneyPriceCents Int?
+  moneyDiscountPercent   Int  @default(0)
+
+  createdAt DateTime @default(now())
+
+  cards     StructureDeckCard[]
+  cosmetics Cosmetic[]
+  purchases StructureDeckPurchase[]
+}
+
+model StructureDeckCard {
+  id              String        @id @default(cuid())
+  structureDeckId String
+  structureDeck   StructureDeck @relation(fields: [structureDeckId], references: [id], onDelete: Cascade)
+  cardId          Int
+  card            Card          @relation(fields: [cardId], references: [id])
+  section         String // main | extra | side
+  quantity        Int
+
+  @@unique([structureDeckId, cardId, section])
+}
+
+model StructureDeckPurchase {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  structureDeckId String
+  structureDeck   StructureDeck @relation(fields: [structureDeckId], references: [id])
+  edition         String // base | premium
+  currency        String // cash | gold | money
+  amountPaid      Int
+  createdAt       DateTime      @default(now())
+
+  @@index([userId, structureDeckId])
 }

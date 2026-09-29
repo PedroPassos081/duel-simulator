@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { CREDIT_LABEL, canBuyNextWithGold, goldCopyLimit } from "@/lib/shop-rules";
+import { addClanBonus } from "@/lib/clans/service";
 
+// Regra da loja: ninguém compra mais de 3 cópias de uma carta; as 2 primeiras
+// podem ser em gold e a 3ª só em crédito (ver shop-rules.ts). Cartas marcadas
+// como cashOnly só podem ser compradas com crédito.
 export const MAX_COPIES_PURCHASABLE = 3;
 
 type Currency = "gold" | "cash";
@@ -66,6 +71,7 @@ export async function grantCurrency(
 /**
  * Concede as recompensas de gold ao fim de uma partida.
  * Chamado apenas pelo servidor de duelo (nunca pelo cliente).
+ * O clã de cada jogador recebe +10% no cofre, sem tirar do jogador.
  */
 export async function grantMatchRewards(
   matchId: string,
@@ -74,13 +80,31 @@ export async function grantMatchRewards(
   goldForWin: number,
   goldForLoss: number
 ) {
-  await grantCurrency(winnerUserId, "gold", goldForWin, "match_win", "Match", matchId);
-  await grantCurrency(loserUserId, "gold", goldForLoss, "match_loss", "Match", matchId);
+  const ref = { type: "Match", id: matchId };
+  await grantCurrency(winnerUserId, "gold", goldForWin, "match_win", ref.type, ref.id);
+  await grantCurrency(loserUserId, "gold", goldForLoss, "match_loss", ref.type, ref.id);
+  await addClanBonus(winnerUserId, "gold", goldForWin, "match_bonus", ref);
+  await addClanBonus(loserUserId, "gold", goldForLoss, "match_bonus", ref);
 }
 
 /**
- * Compra uma carta na loja, validando: moeda permitida, saldo suficiente e
- * limite de MAX_COPIES_PURCHASABLE cópias por carta. Tudo dentro de uma única
+ * Premiação em gold ou crédito para um jogador (torneios, eventos...).
+ * Assim como no Random, o clã dele recebe +10% no cofre.
+ */
+export async function grantPrize(
+  userId: string,
+  currency: Currency,
+  amount: number,
+  refType: string,
+  refId: string
+) {
+  await grantCurrency(userId, currency, amount, "prize", refType, refId);
+  await addClanBonus(userId, currency, amount, "prize_bonus", { type: refType, id: refId });
+}
+
+/**
+ * Compra uma carta na loja, validando: saldo suficiente, limite total de cópias
+ * da carta e limite de cópias em gold (ver shop-rules.ts). Tudo dentro de uma única
  * transação de banco para evitar condição de corrida (double purchase).
  */
 export async function purchaseCard(userId: string, cardId: number, currency: Currency) {
@@ -90,22 +114,27 @@ export async function purchaseCard(userId: string, cardId: number, currency: Cur
       throw new EconomyError("Carta não disponível na loja.");
     }
 
-    if (listing.cashOnly && currency !== "cash") {
-      throw new EconomyError("Esta carta só pode ser comprada com cash.");
-    }
-
+    const currencyLabel = currency === "gold" ? "gold" : CREDIT_LABEL.toLowerCase();
     const price = currency === "gold" ? listing.priceGold : listing.priceCash;
     if (price == null) {
-      throw new EconomyError(`Esta carta não pode ser comprada com ${currency}.`);
+      throw new EconomyError(`Esta carta não pode ser comprada com ${currencyLabel}.`);
     }
 
     const ownership = await tx.userCardOwnership.findUnique({
       where: { userId_cardId: { userId, cardId } },
     });
     const currentQuantity = ownership?.quantity ?? 0;
-    if (currentQuantity >= MAX_COPIES_PURCHASABLE) {
+    const maxTotal = Math.min(listing.maxTotal, MAX_COPIES_PURCHASABLE);
+    if (currentQuantity >= maxTotal) {
+      throw new EconomyError(`Limite de ${maxTotal} cópia(s) desta carta já atingido.`);
+    }
+
+    if (currency === "gold" && !canBuyNextWithGold(listing, currentQuantity)) {
+      const goldLimit = goldCopyLimit(listing);
       throw new EconomyError(
-        `Limite de ${MAX_COPIES_PURCHASABLE} cópias desta carta já atingido.`
+        goldLimit === 0
+          ? `Esta carta só pode ser comprada com ${CREDIT_LABEL.toLowerCase()}.`
+          : `A ${currentQuantity + 1}ª cópia desta carta só pode ser comprada com ${CREDIT_LABEL.toLowerCase()}.`
       );
     }
 
@@ -116,7 +145,7 @@ export async function purchaseCard(userId: string, cardId: number, currency: Cur
     });
     const currentBalance = currency === "gold" ? wallet.gold : wallet.cash;
     if (currentBalance < price) {
-      throw new EconomyError(`Saldo de ${currency} insuficiente.`);
+      throw new EconomyError(`Saldo de ${currencyLabel} insuficiente.`);
     }
 
     const newBalance = currentBalance - price;

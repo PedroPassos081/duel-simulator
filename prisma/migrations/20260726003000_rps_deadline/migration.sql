@@ -1,0 +1,2 @@
+ALTER TABLE "Match"
+ADD COLUMN "rpsDeadline" TIMESTAMP(3);

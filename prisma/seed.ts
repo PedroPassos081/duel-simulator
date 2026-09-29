@@ -2,66 +2,143 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// Cartas liberadas fora do recorte histórico para testar interações complexas
+// do OCGCore. Manter esta lista explícita evita importar o catálogo moderno
+// inteiro junto do pool base do jogo.
+const TEST_CARD_IDS = [
+  55610595, // Blackwing - Pinaki the Waxing Moon
+  49003716, // Blackwing - Bora the Spear
+  58820853, // Blackwing - Shura the Blue Flame
+  75498415, // Blackwing - Sirocco the Dawn
+  2009101, // Blackwing - Gale the Whirlwind
+  81105204, // Blackwing - Kris the Crack of Dawn
+  22835145, // Blackwing - Blizzard the Far North
+  14785765, // Blackwing - Zephyros the Elite
+  85215458, // Blackwing - Kalut the Moon Shadow
+  76913983, // Blackwing Armed Wing
+  69031175, // Blackwing Armor Master
+  33236860, // Blackwing - Silverwind the Ascendant
+  1475311, // Allure of Darkness
+  53567095, // Icarus Attack
+  5318639, // Mystical Space Typhoon
+  91351370, // Black Whirlwind
+] as const;
+
+type ApiCard = {
+  id: number;
+  name: string;
+  type: string;
+  race?: string;
+  attribute?: string;
+  atk?: number;
+  def?: number;
+  level?: number;
+  desc?: string;
+  card_images?: { image_url?: string }[];
+};
+
+async function fetchCards(url: string, label: string): Promise<ApiCard[]> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Erro ao buscar ${label}: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as { data?: ApiCard[] };
+  if (!Array.isArray(payload.data)) {
+    throw new Error(`A API não retornou cartas para ${label}.`);
+  }
+  return payload.data;
+}
+
+async function fetchOptionalCards(url: string, label: string): Promise<ApiCard[]> {
+  try {
+    return await fetchCards(url, label);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[SEED] Aviso: ${message}. Usando descrições em inglês.`);
+    return [];
+  }
+}
+
+function mergeCards(...catalogs: ApiCard[][]) {
+  return [...new Map(catalogs.flat().map((card) => [card.id, card])).values()];
+}
+
 // =========================================================================
 // 1. TABELA DE PREÇOS MANUAIS E LIMITES POR CARTA
 // As cartas aqui recebem os teus valores e travas exatas.
 // Se a carta NÃO estiver nesta tabela, o script usará o preço automático padrão.
+//
+// maxGold = quantas das PRIMEIRAS cópias podem ser compradas com gold (o resto só em crédito):
+//   2 → padrão, a 3ª cópia só em crédito
+//   1 → a partir da 2ª cópia só em crédito
+//   0 → carta só pode ser comprada com crédito
 // =========================================================================
 const tabelaDePrecosExcecoes: Record<
   number,
   { gold: number; cash: number; maxTotal?: number; maxGold?: number; maxCash?: number }
 > = {
   // --- MONSTROS CLÁSSICOS / EFEITO ---
-  89631139: { gold: 2000, cash: 200, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Blue-Eyes White Dragon
-  46986414: { gold: 1500, cash: 150, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Dark Magician
-  70781052: { gold: 400, cash: 40, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Summoned Skull
-  52097679: { gold: 500, cash: 50, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Cyber Dragon
-  44519536: { gold: 600, cash: 60, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Elemental HERO Stratos
+  89631139: { gold: 2000, cash: 200, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Blue-Eyes White Dragon
+  46986414: { gold: 1500, cash: 150, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Dark Magician
+  70781052: { gold: 400, cash: 40, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Summoned Skull
+  52097679: { gold: 500, cash: 50, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Cyber Dragon
+  44519536: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Elemental HERO Stratos
 
   // --- MONSTROS DO EXTRA DECK ---
-  70903359: { gold: 1200, cash: 120, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Stardust Dragon
-  25788011: { gold: 1000, cash: 100, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Number 39: Utopia
-  63646218: { gold: 800, cash: 80, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Elemental HERO Flame Wingman
+  70903359: { gold: 1200, cash: 120, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Stardust Dragon
+  25788011: { gold: 1000, cash: 100, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Number 39: Utopia
+  63646218: { gold: 800, cash: 80, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Elemental HERO Flame Wingman
 
   // --- MÁGICAS ---
   83764718: { gold: 1000, cash: 100, maxTotal: 1, maxGold: 1, maxCash: 1 }, // Monster Reborn (Limitada 1x)
-  242146: { gold: 400, cash: 40, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Mystical Space Typhoon
-  78651105: { gold: 300, cash: 30, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Polymerization
-  14087893: { gold: 500, cash: 50, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Book of Moon
+  242146: { gold: 400, cash: 40, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Mystical Space Typhoon
+  78651105: { gold: 300, cash: 30, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Polymerization
+  14087893: { gold: 500, cash: 50, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Book of Moon
 
   // --- ARMADILHAS ---
   41420027: { gold: 1200, cash: 120, maxTotal: 3, maxGold: 2, maxCash: 1 }, // Solemn Judgment
-  18045289: { gold: 600, cash: 60, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Mirror Force
-  4734313: { gold: 600, cash: 60, maxTotal: 3, maxGold: 3, maxCash: 3 }, // Torrential Tribute
+  18045289: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Mirror Force
+  4734313: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Torrential Tribute
 };
 
 async function main() {
-  console.log(`\n[SEED] Limpando dados antigos da loja e cartas...`);
-  // Deleta listagens e cartas antigas em cascata para garantir que não fiquem resíduos
-  await prisma.shopListing.deleteMany();
-  await prisma.card.deleteMany();
-
   console.log(`[SEED] Buscando catálogo TCG em Inglês (Nomes Oficiais)...`);
   const urlEn = `https://db.ygoprodeck.com/api/v7/cardinfo.php?enddate=2006-12-31&format=tcg`;
-  const resEn = await fetch(urlEn);
-  if (!resEn.ok) throw new Error(`Erro ao conectar à API (EN): ${resEn.statusText}`);
-  const dataEn = await resEn.json();
-  const apiCardsEn = dataEn.data;
+  const baseCardsEn = await fetchCards(urlEn, "catálogo TCG em inglês");
+
+  console.log(`[SEED] Buscando pacote seletivo de teste dos Blackwing...`);
+  const testIds = TEST_CARD_IDS.join(",");
+  const testCardsEn = await fetchCards(
+    `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${testIds}`,
+    "pacote Blackwing em inglês"
+  );
+  const returnedTestIds = new Set(testCardsEn.map((card) => card.id));
+  const missingTestIds = TEST_CARD_IDS.filter((id) => !returnedTestIds.has(id));
+  if (missingTestIds.length > 0) {
+    throw new Error(`A API não retornou as cartas de teste: ${missingTestIds.join(", ")}.`);
+  }
+  const apiCardsEn = mergeCards(baseCardsEn, testCardsEn);
 
   console.log(`[SEED] Buscando catálogo TCG em Português (Efeitos/Descrições)...`);
   const urlPt = `https://db.ygoprodeck.com/api/v7/cardinfo.php?enddate=2006-12-31&format=tcg&language=pt`;
-  const resPt = await fetch(urlPt);
-  const dataPt = await resPt.json();
+  const [baseCardsPt, testCardsPt] = await Promise.all([
+    fetchOptionalCards(urlPt, "catálogo TCG em português"),
+    fetchOptionalCards(
+      `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${testIds}&language=pt`,
+      "pacote Blackwing em português"
+    ),
+  ]);
 
   // Mapeia as descrições traduzidas em Português usando o ID da carta
   const ptDescMap = new Map<number, string>();
-  if (dataPt.data) {
-    for (const card of dataPt.data) {
-      ptDescMap.set(card.id, card.desc);
-    }
+  for (const card of mergeCards(baseCardsPt, testCardsPt)) {
+    if (card.desc) ptDescMap.set(card.id, card.desc);
   }
 
-  console.log(`[SEED] Processando ${apiCardsEn.length} cartas TCG (≤ 2006). Populando o banco...`);
+  console.log(
+    `[SEED] Processando ${apiCardsEn.length} cartas TCG (pool base + ${TEST_CARD_IDS.length} cartas de teste). Populando o banco...`
+  );
 
   let importCount = 0;
   let customPriceCount = 0;
@@ -103,7 +180,7 @@ async function main() {
     let priceGold = 200;
     let priceCash = 20;
     let maxTotal = 3;
-    let maxGold = 3;
+    let maxGold = 2; // padrão: a 3ª cópia é sempre em crédito
     let maxCash = 3;
 
     if (tabelaDePrecosExcecoes[cardData.id]) {
@@ -111,7 +188,7 @@ async function main() {
       priceGold = config.gold;
       priceCash = config.cash;
       maxTotal = config.maxTotal ?? 3;
-      maxGold = config.maxGold ?? 3;
+      maxGold = config.maxGold ?? 2;
       maxCash = config.maxCash ?? 3;
       customPriceCount++;
     } else {

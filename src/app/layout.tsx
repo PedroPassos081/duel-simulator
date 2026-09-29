@@ -2,16 +2,18 @@ import type { Metadata } from "next";
 import "@/app/globals.css";
 import { Navbar } from "@/components/Navbar";
 import { ConditionalNavbar } from "@/components/ConditionalNavbar";
+import { ConditionalBackdrop } from "@/components/theme/ConditionalBackdrop";
 
 export const metadata: Metadata = {
-  title: "Duel Simulator",
-  description: "Deck builder e simulador para o formato Edison — projeto de fã, não afiliado à Konami.",
+  title: "Master Duelist",
+  description: "Master Duelist — deck builder e simulador para o formato Edison. Projeto de fã, não afiliado à Konami.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-br">
       <body className="min-h-screen bg-edison-bg text-gray-100">
+        <ConditionalBackdrop />
         <ConditionalNavbar>
           <Navbar />
         </ConditionalNavbar>
