@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { checkClockTimeout, syncClock } from "@/lib/duel/clock";
 
 const schema = z.object({
   choice: z.enum(["rock", "paper", "scissors"]),
@@ -27,6 +28,9 @@ export async function POST(
     return NextResponse.json({ error: "Escolha inválida." }, { status: 400 });
   }
 
+  if (await checkClockTimeout(params.id)) {
+    return NextResponse.json({ error: "O tempo acabou." }, { status: 409 });
+  }
   const result = await prisma.$transaction(async (tx) => {
     const room = await tx.match.findFirst({
       where: { id: params.id, status: "rps", players: { some: { userId } } },
@@ -89,5 +93,7 @@ export async function POST(
       { status: 409 }
     );
   }
+  // Quem já escolheu para de gastar tempo; no empate, volta a correr para os dois
+  await syncClock(params.id).catch((err) => console.error("[clock]", params.id, err));
   return NextResponse.json(result);
 }

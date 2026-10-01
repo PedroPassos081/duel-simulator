@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isDuelGameState, type DuelChainState } from "@/lib/duel/game-state";
+import { getBracketRoomInfo, joinBracketGame } from "@/lib/brackets";
+import { settleMatch } from "@/lib/match-results";
+import { checkClockTimeout, clockView, isDuelClock, syncClock } from "@/lib/duel/clock";
 import {
   getOcgDuelSessionSnapshot,
   getOcgAttackableMonsters,
@@ -35,6 +38,12 @@ export async function GET(
     data: { lastSeenAt: new Date() },
   });
 
+  // Torneio em chaves: entrar na sala marca presença (e confere o deck); começa ou dá W.O.
+  const bracketJoin = await joinBracketGame(params.id, userId);
+  const bracket = await getBracketRoomInfo(params.id, userId, bracketJoin.issue);
+  // Relógio: quem zerou o tempo perde (vale também no pedra-papel-tesoura)
+  if (userId) await checkClockTimeout(params.id);
+
   let room = await prisma.match.findFirst({
     where: { id: params.id, players: { some: { userId } } },
     include: {
@@ -50,6 +59,55 @@ export async function GET(
   });
   if (!room) {
     return NextResponse.json({ error: "Sala não encontrada." }, { status: 404 });
+  }
+
+  // Duelo da fila em que um jogador nunca abriu a sala (saiu e não voltou):
+  // passado o prazo do pedra-papel-tesoura, quem não apareceu perde por W.O. e
+  // quem estava aqui vence (pontos e gold normais). Torneio em chaves tem o W.O. próprio.
+  let walkover = false;
+  if (room.status === "rps" && room.rpsDeadline && room.rpsDeadline.getTime() <= Date.now()) {
+    const seen = await prisma.match.findUnique({
+      where: { id: room.id },
+      select: { createdAt: true, seriesId: true, players: { select: { id: true, userId: true, lastSeenAt: true, rpsChoice: true } } },
+    });
+    const absent = seen?.players.filter((p) => !p.rpsChoice && p.lastSeenAt.getTime() <= seen.createdAt.getTime() + 3_000) ?? [];
+    if (seen && !seen.seriesId && absent.length > 0) {
+      const { count } = await prisma.match.updateMany({
+        where: { id: room.id, status: "rps" },
+        data: { status: "finished", currentPhase: "walkover", finishedAt: new Date(), rpsDeadline: null },
+      });
+      walkover = true;
+      if (count > 0) {
+        for (const p of seen.players) {
+          await prisma.matchPlayer.update({ where: { id: p.id }, data: { result: absent.some((a) => a.id === p.id) ? "loss" : "win" } });
+        }
+        await settleMatch(room.id).catch((err) => console.error("[W.O.]", room!.id, err));
+      }
+    }
+  }
+
+  // Duelo decidido por W.O. (alguém não apareceu): tela própria, sem tabuleiro
+  if (walkover || room.status === "finished") {
+    const wo = await prisma.match.findUnique({
+      where: { id: room.id },
+      select: { currentPhase: true, engineState: true, players: { select: { userId: true, result: true } } },
+    });
+    // Tempo zerado antes do duelo começar (pedra-papel-tesoura / escolha da ordem): mesma tela do W.O.
+    const timeoutBeforeDuel = wo?.currentPhase === "timeout" && !isDuelGameState(wo.engineState);
+    if (wo?.currentPhase === "walkover" || timeoutBeforeDuel) {
+      return NextResponse.json(
+        {
+          id: room.id,
+          status: "walkover",
+          reason: timeoutBeforeDuel ? "timeout" : "absent",
+          meId: userId,
+          players: [],
+          rpsRound: room.rpsRound,
+          youWon: wo!.players.find((p) => p.userId === userId)?.result === "win",
+        },
+        { headers: NO_CACHE_HEADERS }
+      );
+    }
   }
 
   if (
@@ -104,6 +162,19 @@ export async function GET(
         });
       });
     }
+  }
+
+  // Cria o relógio na primeira vez e acompanha o pedra-papel-tesoura resolvido acima
+  let clock = room.clock;
+  if (["rps", "choosing", "active"].includes(room.status)) {
+    const prev = isDuelClock(clock) ? clock : null;
+    const rpsPending = room.status === "rps" ? room.players.filter((p) => !p.rpsChoice).map((p) => p.userId).sort().join() : null;
+    const runningNow = prev ? [...prev.running].sort().join() : null;
+    const stale =
+      !prev ||
+      (room.status === "rps" && runningNow !== rpsPending) ||
+      (room.status === "choosing" && runningNow !== (room.rpsWinnerId ?? ""));
+    if (stale) clock = ((await syncClock(room.id)) as unknown as typeof clock) ?? clock;
   }
 
   const storedState = isDuelGameState(room.engineState)
@@ -222,11 +293,7 @@ export async function GET(
         linkCount: chainState.links.length,
         awaitingYou: chainState.awaitingPlayerId === userId,
         controllerId: lastChainLink?.playerId ?? null,
-        deadlineAt: chainState.deadlineAt ?? null,
-        canForceClose:
-          chainState.awaitingPlayerId !== userId &&
-          Boolean(chainState.deadlineAt) &&
-          new Date(chainState.deadlineAt!).getTime() <= Date.now(),
+        awaitingPlayerId: chainState.awaitingPlayerId,
         options: chainOptionIds
           .map((cardId) => cardById.get(cardId))
           .filter(Boolean),
@@ -257,6 +324,9 @@ export async function GET(
     rpsDeadline: room.rpsDeadline?.toISOString() ?? null,
     rpsWinnerId: room.rpsWinnerId,
     firstPlayerId: room.firstPlayerId,
+    bracket,
+    clock: clockView(clock),
+    endReason: room.currentPhase === "timeout" ? "timeout" : null,
     ocgCore: ocgSnapshot,
     game:
       ["active", "finished"].includes(room.status) && ownState
@@ -373,6 +443,8 @@ export async function GET(
                         : pendingDecision
               : null,
             chain: chainView,
+            clock: clockView(clock),
+            endReason: room.currentPhase === "timeout" ? "timeout" : null,
           }
         : null,
     players: room.players.map((player) => ({

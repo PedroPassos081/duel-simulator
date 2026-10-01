@@ -2,18 +2,19 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  CircleDollarSign,
   Layers3,
   LibraryBig,
   Plus,
   ShoppingBag,
   Sparkles,
 } from "lucide-react";
+import { GoldIcon, CreditIcon } from "@/components/theme/CurrencyIcons";
 
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { CREDIT_LABEL_PLURAL } from "@/lib/shop-rules";
 import { prisma } from "@/lib/prisma";
+import { ART, cardArt } from "@/lib/card-art";
 
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat("pt-BR", {
@@ -70,6 +71,9 @@ export default async function HomePage() {
     return (
       <div className="relative isolate overflow-hidden py-12 sm:py-20">
         <div className="absolute left-1/2 top-0 -z-10 h-96 w-96 -translate-x-1/2 rounded-full bg-edison-gold/10 blur-3xl" />
+        {/* Os dois duelistas clássicos nas laterais, apagando em direção ao texto */}
+        <img src={cardArt(ART.blueEyes)} alt="" aria-hidden className="pointer-events-none absolute inset-y-0 left-0 -z-10 hidden h-[34rem] w-1/4 object-cover object-[center_20%] opacity-30 [mask-image:linear-gradient(to_right,black,transparent)] lg:block" />
+        <img src={cardArt(ART.darkMagician)} alt="" aria-hidden className="pointer-events-none absolute inset-y-0 right-0 -z-10 hidden h-[34rem] w-1/4 object-cover object-[center_20%] opacity-30 [mask-image:linear-gradient(to_left,black,transparent)] lg:block" />
 
         <section className="mx-auto max-w-4xl text-center">
           <Image
@@ -93,7 +97,7 @@ export default async function HomePage() {
             <span className="block text-edison-gold">Prepare seu próximo duelo.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-gray-400 sm:text-lg">
-            Monte decks, confira a banlist e organize sua coleção em um só
+            Monte decks, confira a banlist e organize sua Maleta em um só
             lugar. O catálogo já possui {catalogSize} cartas disponíveis.
           </p>
           <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
@@ -122,7 +126,7 @@ export default async function HomePage() {
             },
             {
               icon: LibraryBig,
-              title: "Sua coleção",
+              title: "Sua Maleta",
               text: "Acompanhe as cartas disponíveis na sua conta.",
             },
             {
@@ -155,7 +159,11 @@ export default async function HomePage() {
 
   return (
     <div className="py-6 sm:py-10">
-      <section className="relative isolate overflow-hidden rounded-3xl border border-edison-border bg-edison-panel p-6 sm:p-9">
+      <section className="relative isolate overflow-hidden rounded-3xl border border-edison-gold/30 bg-edison-panel p-6 sm:p-9">
+        {/* Dark Magician à direita, Blue-Eyes à esquerda: a dupla clássica vigiando o painel */}
+        <img src={cardArt(ART.darkMagician)} alt="" aria-hidden className="pointer-events-none absolute inset-y-0 right-0 -z-10 h-full w-3/4 animate-banner-drift object-cover object-[center_25%] opacity-50 sm:w-1/2" />
+        <img src={cardArt(ART.blueEyes)} alt="" aria-hidden className="pointer-events-none absolute inset-y-0 left-0 -z-10 hidden h-full w-1/3 object-cover object-[center_20%] opacity-30 lg:block" />
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-r from-edison-panel via-edison-panel/80 to-edison-panel/20" />
         <div className="absolute -right-20 -top-24 -z-10 h-72 w-72 rounded-full bg-edison-gold/10 blur-3xl" />
         <div className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end">
           <div>
@@ -166,7 +174,7 @@ export default async function HomePage() {
               Bem-vindo, {firstName}
             </h1>
             <p className="mt-3 max-w-xl text-gray-400">
-              Continue construindo sua coleção e prepare uma nova estratégia
+              Continue construindo sua Maleta e prepare uma nova estratégia
               para o formato Edison.
             </p>
           </div>
@@ -190,18 +198,18 @@ export default async function HomePage() {
           },
           {
             icon: LibraryBig,
-            label: "Cartas na coleção",
+            label: "Cartas na Maleta",
             value: ownedCards,
             color: "text-blue-400 bg-blue-400/10",
           },
           {
-            icon: CircleDollarSign,
+            icon: GoldIcon,
             label: "Gold disponível",
             value: user.wallet?.gold ?? 0,
             color: "text-amber-400 bg-amber-400/10",
           },
           {
-            icon: Sparkles,
+            icon: CreditIcon,
             label: `${CREDIT_LABEL_PLURAL} disponíveis`,
             value: user.wallet?.cash ?? 0,
             color: "text-purple-400 bg-purple-400/10",

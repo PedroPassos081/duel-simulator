@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 import {
+  createContext,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -13,6 +15,8 @@ import {
   Ban,
   Bot,
   Bug,
+  Bell,
+  BellOff,
   Eye,
   Layers,
   Loader2,
@@ -26,9 +30,12 @@ import {
   Skull,
   Sparkles,
   Swords,
+  Timer,
   X,
 } from "lucide-react";
 import type { Card, DeckSection } from "@/types/card";
+import { CosmeticArtImage } from "@/components/cosmetics/CosmeticArt";
+import { alertMatchFound, alertYourTurn, isTurnAlertOn, setTurnAlert, unlockAlerts } from "@/lib/duel-alerts";
 
 type EquippedDeck = {
   id: string;
@@ -37,15 +44,25 @@ type EquippedDeck = {
   cards: { section: DeckSection; quantity: number; card: Card }[];
 };
 
+// Relógio do duelo (3:30 + bônus). O servidor manda o tempo de cada um e de quem está correndo.
+type ClockView = { remaining: Record<string, number>; running: string[]; serverNow: string };
+
 type RoomState = {
   id: string;
-  status: "waiting" | "rps" | "choosing" | "active" | "finished";
+  clock?: ClockView | null;
+  // W.O.: "absent" = não abriu a sala; "timeout" = zerou o tempo antes do duelo começar
+  reason?: "absent" | "timeout";
+  status: "waiting" | "rps" | "choosing" | "active" | "finished" | "walkover";
+  // W.O.: alguém não abriu a sala a tempo; quem estava vence
+  youWon?: boolean;
   meId: string;
   rpsRound: number;
   rpsDeadline?: string | null;
   rpsWinnerId?: string;
   firstPlayerId?: string;
   game?: RoomGameState | null;
+  // Torneio em chaves (melhor de 3): espera, W.O., placar e o próximo duelo
+  bracket?: BracketRoomInfo | null;
   players: {
     id: string;
     nickname: string;
@@ -54,8 +71,94 @@ type RoomState = {
   }[];
 };
 
+type BracketRoomInfo = {
+  tournament: string;
+  stage: string;
+  gameNumber: number;
+  score: string;
+  seriesFinished: boolean;
+  seriesWon: boolean;
+  opensAt: string | null;
+  woAt: string | null;
+  meJoined: boolean;
+  opponentJoined: boolean;
+  chooser: boolean;
+  nextMatchId: string | null;
+  issue: string | null;
+};
+
+const mmss = (ms: number) => {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+};
+
+/** Torneio: tela de espera antes do duelo (5 min, ou na hora se os dois entrarem) e o tempo de W.O. */
+function BracketWaiting({ info }: { info: BracketRoomInfo }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(t);
+  }, []);
+  const opensIn = info.opensAt ? new Date(info.opensAt).getTime() - now : 0;
+  const woIn = info.woAt ? new Date(info.woAt).getTime() - now : 0;
+  return (
+    <>
+      <p className="text-xs font-black uppercase tracking-[0.25em] text-edison-gold">
+        {info.tournament} · {info.stage}
+      </p>
+      <h1 className="mt-2 text-2xl font-black">Duelo {info.gameNumber} · melhor de 3</h1>
+      <p className="mt-1 text-sm text-white/60">Placar: {info.score}</p>
+      {info.issue ? (
+        <p className="mt-5 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{info.issue}</p>
+      ) : opensIn > 0 ? (
+        <>
+          <div className="mx-auto mt-5 flex h-20 w-20 items-center justify-center rounded-full border-2 border-edison-gold/40 bg-edison-gold/10 font-mono text-xl font-black text-edison-gold">
+            {mmss(opensIn)}
+          </div>
+          <p className="mt-3 text-sm text-white/60">
+            {info.opponentJoined ? "Seu adversário já está aqui. Começando..." : "O duelo começa quando o tempo acabar, ou na hora em que o adversário entrar."}
+          </p>
+        </>
+      ) : (
+        <>
+          <Loader2 className="mx-auto mt-5 h-10 w-10 animate-spin text-edison-gold" />
+          <p className="mt-3 text-sm text-white/70">{info.opponentJoined ? "Começando..." : "Aguardando o adversário entrar."}</p>
+          {!info.opponentJoined && (
+            <p className="mt-2 text-sm font-bold text-red-300">Tempo do adversário: {mmss(woIn)} · ao zerar, ele perde este duelo por W.O.</p>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+/** Torneio: depois de cada duelo, o placar e o botão para o próximo (ou o resultado do confronto). */
+function BracketNextPanel({ info }: { info: BracketRoomInfo }) {
+  return (
+    <div className="fixed bottom-6 left-1/2 z-[200] w-[min(92vw,420px)] -translate-x-1/2 rounded-2xl border border-edison-gold/40 bg-[#15131b]/95 p-4 text-center shadow-2xl backdrop-blur">
+      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-edison-gold">
+        {info.tournament} · {info.stage}
+      </p>
+      <p className="mt-1 text-lg font-black">Placar do confronto: {info.score}</p>
+      {info.seriesFinished ? (
+        <p className={`mt-1 text-sm font-bold ${info.seriesWon ? "text-emerald-300" : "text-red-300"}`}>
+          {info.seriesWon ? "Você venceu o confronto! O próximo duelo aparece no aviso do topo." : "Fim do confronto. Obrigado por duelar!"}
+        </p>
+      ) : info.nextMatchId ? (
+        <a href={`/duel/play?room=${info.nextMatchId}`} className="mt-3 inline-block rounded-xl bg-edison-gold px-6 py-2.5 text-sm font-black text-black">
+          Ir para o duelo {info.gameNumber + 1}
+        </a>
+      ) : (
+        <p className="mt-1 text-sm text-white/60">Abrindo o próximo duelo...</p>
+      )}
+    </div>
+  );
+}
+
 type RoomGameState = {
   meId: string;
+  clock?: ClockView | null;
+  endReason?: "timeout" | null;
   ownHand: Card[];
   ownMonsters: FieldCardView[];
   ownSpellTraps: FieldCardView[];
@@ -92,8 +195,7 @@ type RoomGameState = {
     linkCount: number;
     awaitingYou: boolean;
     controllerId: string | null;
-    deadlineAt?: string | null;
-    canForceClose: boolean;
+    awaitingPlayerId?: string;
     // Cartas que você pode ativar nesta janela (ex.: Kalut no cálculo de dano).
     options?: Card[];
   } | null;
@@ -256,7 +358,28 @@ function fanTransform(index: number, count: number, opponent = false) {
   return `translateY(calc(var(--z) * ${drop})) rotate(${angle}deg)`;
 }
 
-function CardBack({ className = "h-full w-full" }: { className?: string }) {
+// Sleeve e playmat equipados por quem está jogando (o do oponente ainda não é enviado pela sala).
+const CosmeticsContext = createContext<{ sleeveUrl: string | null; playmatUrl: string | null; playmatTint: string | null }>({
+  sleeveUrl: null,
+  playmatUrl: null,
+  playmatTint: null,
+});
+
+const PLAYMAT_TINTS: Record<string, string> = {
+  brasil: "linear-gradient(180deg, rgba(0,80,40,0.55), rgba(0,30,90,0.55))",
+};
+
+function CardBack({ className = "h-full w-full", opponent = false }: { className?: string; opponent?: boolean }) {
+  const { sleeveUrl } = useContext(CosmeticsContext);
+  if (sleeveUrl && !opponent) {
+    return (
+      <div className={`relative overflow-hidden rounded-[3px] bg-black ${className}`}>
+        <CosmeticArtImage url={sleeveUrl} />
+        <span className="pointer-events-none absolute inset-[7%] rounded-[3px] border border-amber-200/50" />
+        <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/45" />
+      </div>
+    );
+  }
   return (
     <div className={`relative overflow-hidden rounded-[3px] bg-black ${className}`}>
       <Image
@@ -487,7 +610,7 @@ function ZoneRow({
               {fieldCard.faceDown ? (
                 <>
                   <div className="absolute inset-0 transition duration-300 group-hover:opacity-25">
-                    <CardBack />
+                    <CardBack opponent={opponent} />
                   </div>
                   {!opponent && card?.imageUrl && (
                     <Image
@@ -501,7 +624,7 @@ function ZoneRow({
                   )}
                 </>
               ) : !card?.imageUrl ? (
-                <CardBack />
+                <CardBack opponent={opponent} />
               ) : (
                 <Image
                   src={card.imageUrl}
@@ -578,7 +701,7 @@ function FieldZone({
         }`}
       >
         {fieldCard.faceDown || !card?.imageUrl ? (
-          <CardBack />
+          <CardBack opponent={opponent} />
         ) : (
           <Image
             src={card.imageUrl}
@@ -798,6 +921,7 @@ function CardInspector({ card }: { card?: Card }) {
         </div>
       ) : (
         <div className="flex flex-1 flex-col gap-2 p-4">
+          <TurnAlertToggle />
           <button
             onClick={() => { setReportOpen(true); setReportStatus("idle"); }}
             className="flex items-center justify-center gap-2 rounded-lg border border-red-400/30 bg-red-950/60 py-2.5 text-xs font-bold text-red-100 hover:bg-red-900/70"
@@ -895,16 +1019,58 @@ function PhaseTrack({
   );
 }
 
+/** Tempo que sobra de cada jogador, contando no navegador entre uma atualização e outra. */
+function useDuelClock(clock?: ClockView | null) {
+  const [now, setNow] = useState(() => Date.now());
+  const received = useMemo(() => ({ clock, at: Date.now() }), [clock]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (id?: string | null) => {
+    const c = received.clock;
+    if (!c || !id || c.remaining[id] == null) return null;
+    const base = c.remaining[id];
+    return c.running.includes(id) ? Math.max(0, base - Math.max(0, now - received.at)) : base;
+  };
+}
+
+function formatClock(ms: number) {
+  const total = Math.ceil(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** Relógio de um duelista: pulsa quando está correndo e fica vermelho nos últimos 30s. */
+function ClockChip({ ms, running, className = "" }: { ms: number | null; running: boolean; className?: string }) {
+  if (ms == null) return null;
+  const low = ms <= 30_000;
+  return (
+    <span
+      title={running ? "Seu tempo está correndo" : "Tempo parado"}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono font-black tabular-nums ${
+        low ? "border-red-500/60 bg-red-950/70 text-red-200" : running ? "border-edison-gold/60 bg-[#1c160a]/90 text-edison-gold" : "border-white/10 bg-white/5 text-white/45"
+      } ${running && low ? "animate-pulse" : ""} ${className}`}
+    >
+      <Timer className="h-3 w-3" />
+      {formatClock(ms)}
+    </span>
+  );
+}
+
 function DuelistHud({
   opponent = false,
   lifePoints = 8_000,
   nickname,
   image,
+  clockMs = null,
+  clockRunning = false,
 }: {
   opponent?: boolean;
   lifePoints?: number;
   nickname?: string;
   image?: string | null;
+  clockMs?: number | null;
+  clockRunning?: boolean;
 }) {
   const lifeRatio = Math.max(0, Math.min(100, (lifePoints / 8_000) * 100));
   const name = nickname ?? (opponent ? "Oponente" : "Você");
@@ -937,7 +1103,14 @@ function DuelistHud({
         )}
       </div>
       <p className={`mt-1 w-full truncate px-0.5 text-center font-bold ${UI_TEXT}`}>
-        {name}
+        {/* Nome abre o perfil numa nova aba (sem sair do duelo) */}
+        {nickname ? (
+          <a href={`/perfil/${encodeURIComponent(nickname)}`} target="_blank" rel="noopener" className="hover:underline" title={`Ver perfil de @${nickname}`}>
+            {name}
+          </a>
+        ) : (
+          name
+        )}
       </p>
       <p className="font-mono text-[length:clamp(13px,calc(var(--z)*0.15),21px)] font-black leading-tight tabular-nums">
         {lifePoints}
@@ -950,6 +1123,7 @@ function DuelistHud({
           }`}
         />
       </div>
+      <ClockChip ms={clockMs} running={clockRunning} className={`mt-1 ${UI_TEXT}`} />
     </section>
   );
 }
@@ -986,7 +1160,9 @@ function DuelResultScreen({
   opponentLifePoints,
   opponentNickname,
   onViewBoard,
+  timeout = false,
 }: {
+  timeout?: boolean;
   youWon: boolean;
   nickname: string;
   image: string | null;
@@ -1137,7 +1313,13 @@ function DuelResultScreen({
               youWon ? "text-edison-gold/90" : "text-red-200/85"
             }`}
           >
-            {youWon ? "Parabéns, você ganhou!" : "Boa sorte na próxima!"}
+            {timeout
+              ? youWon
+                ? "O tempo do adversário acabou. A vitória é sua!"
+                : "Seu tempo acabou. Boa sorte na próxima!"
+              : youWon
+                ? "Parabéns, você ganhou!"
+                : "Boa sorte na próxima!"}
           </p>
 
           <div className="relative mt-5 flex items-center justify-center gap-2 font-mono text-xs">
@@ -1180,6 +1362,28 @@ function DuelResultScreen({
   );
 }
 
+/** Liga/desliga o apito quando começa o seu turno (fica salvo neste aparelho). */
+function TurnAlertToggle() {
+  const [on, setOn] = useState(true);
+  useEffect(() => setOn(isTurnAlertOn()), []);
+  return (
+    <button
+      onClick={() => {
+        setTurnAlert(!on);
+        setOn(!on);
+        unlockAlerts();
+      }}
+      className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-xs font-bold ${
+        on ? "border-edison-gold/40 bg-edison-gold/10 text-edison-gold" : "border-white/15 bg-white/5 text-white/60"
+      }`}
+      aria-pressed={on}
+    >
+      {on ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+      Som do seu turno: {on ? "ligado" : "desligado"}
+    </button>
+  );
+}
+
 function PreDuelGate({
   roomId,
   onGameState,
@@ -1188,10 +1392,12 @@ function PreDuelGate({
   onGameState: (game?: RoomGameState | null) => void;
 }) {
   const [room, setRoom] = useState<RoomState>();
+  const previousStatus = useRef<RoomState["status"] | null>(null);
   const [sending, setSending] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(15);
   const [syncError, setSyncError] = useState(false);
+  const clockLeft = useDuelClock(room?.clock);
 
   useEffect(() => {
     let active = true;
@@ -1205,6 +1411,9 @@ function PreDuelGate({
       );
       if (response.ok && active) {
         const nextRoom: RoomState = await response.json();
+        // Torneio: saiu da espera e o duelo começou → apito (o jogador pode ter saído da tela)
+        if (previousStatus.current === "waiting" && (nextRoom.status === "rps" || nextRoom.status === "choosing")) alertMatchFound();
+        previousStatus.current = nextRoom.status;
         setRoom(nextRoom);
         onGameState(nextRoom.game);
         setSyncError(false);
@@ -1235,6 +1444,31 @@ function PreDuelGate({
     return () => window.clearInterval(timer);
   }, [room?.rpsDeadline]);
 
+  if (room?.status === "walkover") {
+    return (
+      <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[#080b12]/95 p-6 backdrop-blur-lg">
+        <section className="w-full max-w-md rounded-3xl border border-edison-gold/25 bg-[#15131b] p-8 text-center shadow-2xl">
+          {room.youWon ? <Crown className="mx-auto h-12 w-12 text-edison-gold" /> : <ShieldX className="mx-auto h-12 w-12 text-red-300" />}
+          <h1 className="mt-4 text-2xl font-black">
+            {room.reason === "timeout" ? (room.youWon ? "Vitória: tempo do adversário acabou" : "Derrota: seu tempo acabou") : room.youWon ? "Vitória por W.O." : "Derrota por W.O."}
+          </h1>
+          <p className="mt-2 text-sm text-white/60">
+            {room.reason === "timeout"
+              ? room.youWon
+                ? "O relógio do seu adversário zerou antes do duelo começar. Os pontos e o gold já entraram."
+                : "Seu relógio zerou antes do duelo começar. Cada duelista tem 3:30, e o tempo já corre no pedra-papel-tesoura."
+              : room.youWon
+              ? "Seu adversário não apareceu a tempo. A vitória é sua: os pontos e o gold já entraram."
+              : "Você não entrou no duelo a tempo e perdeu por W.O. Da próxima vez, volte em até 45 segundos quando o apito tocar."}
+          </p>
+          <a href="/random" className="mt-6 inline-block rounded-xl bg-edison-gold px-6 py-3 text-sm font-black text-black">
+            Voltar para a fila
+          </a>
+        </section>
+      </div>
+    );
+  }
+  if (room?.status === "finished" && room.bracket) return <BracketNextPanel info={room.bracket} />;
   if (room?.status === "active" || room?.status === "finished") return null;
   const me = room?.players.find((player) => player.id === room.meId);
   const winner = room?.rpsWinnerId === room?.meId;
@@ -1274,7 +1508,9 @@ function PreDuelGate({
   return (
     <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[#080b12]/95 p-6 backdrop-blur-lg">
       <section className="w-full max-w-xl rounded-3xl border border-edison-gold/25 bg-[#15131b] p-8 text-center shadow-2xl">
-        {!room || room.status === "waiting" ? (
+        {room?.status === "waiting" && room.bracket ? (
+          <BracketWaiting info={room.bracket} />
+        ) : !room || room.status === "waiting" ? (
           <>
             <Loader2 className="mx-auto h-12 w-12 animate-spin text-edison-gold" />
             <h1 className="mt-5 text-2xl font-black">Procurando oponente</h1>
@@ -1299,6 +1535,10 @@ function PreDuelGate({
             <div className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-edison-gold/40 bg-edison-gold/10 font-mono text-xl font-black text-edison-gold">
               {secondsLeft}
             </div>
+            <p className="mt-3 flex items-center justify-center gap-2 text-xs text-white/50">
+              Seu relógio do duelo:
+              <ClockChip ms={clockLeft(room.meId)} running={Boolean(room.clock?.running.includes(room.meId))} className="text-xs" />
+            </p>
             <p className="mt-2 text-sm text-white/50">
               {me?.choiceSubmitted
                 ? "Escolha enviada. Aguardando o outro duelista."
@@ -1330,9 +1570,10 @@ function PreDuelGate({
         ) : winner ? (
           <>
             <Swords className="mx-auto h-12 w-12 text-edison-gold" />
-            <h1 className="mt-4 text-2xl font-black">Você venceu</h1>
-            <p className="mt-2 text-sm text-white/50">
+            <h1 className="mt-4 text-2xl font-black">{room?.bracket ? `Duelo ${room.bracket.gameNumber}: você escolhe` : "Você venceu"}</h1>
+            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-white/50">
               Escolha a ordem do duelo.
+              <ClockChip ms={clockLeft(room?.meId)} running={Boolean(room?.meId && room?.clock?.running.includes(room.meId))} className="text-xs" />
             </p>
             <div className="mt-7 grid grid-cols-2 gap-3">
               <button onClick={() => chooseOrder(true)} disabled={sending} className="rounded-xl bg-edison-gold px-5 py-4 font-black text-black disabled:opacity-50">
@@ -1348,7 +1589,7 @@ function PreDuelGate({
             <Loader2 className="mx-auto h-12 w-12 animate-spin text-white/50" />
             <h1 className="mt-5 text-2xl font-black">Aguardando a escolha</h1>
             <p className="mt-2 text-sm text-white/50">
-              O vencedor está escolhendo quem começa.
+              {room?.bracket ? "O adversário está escolhendo quem começa este duelo." : "O vencedor está escolhendo quem começa."}
             </p>
           </>
         )}
@@ -1358,6 +1599,38 @@ function PreDuelGate({
 }
 
 export default function DuelPlayPage() {
+  const [cosmetics, setCosmetics] = useState({ sleeveUrl: null as string | null, playmatUrl: null as string | null, playmatTint: null as string | null });
+
+  useEffect(() => {
+    fetch("/api/account")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((account) => {
+        if (!account) return;
+        const find = (type: string) =>
+          (account.cosmetics as { id: string; type: string; imageUrl: string | null; effect: string | null }[]).find(
+            // O deck equipado pode ter a própria sleeve/playmat; senão vale a da conta
+            (c) => c.id === (account.deckStyle?.[type] ?? account.equipped?.[type])
+          );
+        const sleeve = find("sleeve");
+        const playmat = find("playmat");
+        setCosmetics({
+          sleeveUrl: sleeve?.imageUrl ?? null,
+          playmatUrl: playmat?.imageUrl ?? null,
+          playmatTint: playmat?.effect ? PLAYMAT_TINTS[playmat.effect] ?? null : null,
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  return (
+    <CosmeticsContext.Provider value={cosmetics}>
+      <DuelPlayBoard />
+    </CosmeticsContext.Provider>
+  );
+}
+
+function DuelPlayBoard() {
+  const cosmetics = useContext(CosmeticsContext);
   const [roomId, setRoomId] = useState<string>();
   const [deck, setDeck] = useState<EquippedDeck>();
   const [loading, setLoading] = useState(true);
@@ -1365,6 +1638,20 @@ export default function DuelPlayPage() {
   const [playerDeckCount, setPlayerDeckCount] = useState(0);
   const [opponentDeckCount, setOpponentDeckCount] = useState(35);
   const [gameState, setGameState] = useState<RoomGameState | null>();
+  const clockLeft = useDuelClock(gameState?.clock);
+  const opponentClockId = gameState?.clock ? Object.keys(gameState.clock.remaining).find((id) => id !== gameState.meId) ?? null : null;
+  const lastTurnAlert = useRef<number | null>(null);
+  useEffect(() => {
+    const unlock = () => unlockAlerts();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, []);
+  useEffect(() => {
+    if (!gameState?.isYourTurn || gameState.winnerId) return;
+    if (lastTurnAlert.current === gameState.currentTurn) return;
+    lastTurnAlert.current = gameState.currentTurn;
+    alertYourTurn();
+  }, [gameState?.isYourTurn, gameState?.currentTurn, gameState?.winnerId]);
   const [actionError, setActionError] = useState<string>();
   const [acting, setActing] = useState(false);
   // `acting` (useState) só reflete a trava depois de um re-render; dois
@@ -1377,7 +1664,6 @@ export default function DuelPlayPage() {
   const [pendingPlacement, setPendingPlacement] = useState<PendingPlacement>();
   const [selectedDecisionIndices, setSelectedDecisionIndices] = useState<number[]>([]);
   const [specialSummonOpen, setSpecialSummonOpen] = useState(false);
-  const [chainSecondsLeft, setChainSecondsLeft] = useState(20);
   const [resultHidden, setResultHidden] = useState(false);
 
   useEffect(() => {
@@ -1475,22 +1761,6 @@ export default function DuelPlayPage() {
   useEffect(() => {
     setSelectedDecisionIndices([]);
   }, [decisionSignature]);
-
-  useEffect(() => {
-    function updateChainCountdown() {
-      const deadline = gameState?.chain?.deadlineAt;
-      if (!deadline) {
-        setChainSecondsLeft(20);
-        return;
-      }
-      setChainSecondsLeft(
-        Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000))
-      );
-    }
-    updateChainCountdown();
-    const timer = window.setInterval(updateChainCountdown, 250);
-    return () => window.clearInterval(timer);
-  }, [gameState?.chain?.deadlineAt]);
 
   useEffect(() => {
     setPlayerDeckCount(
@@ -2307,10 +2577,12 @@ export default function DuelPlayPage() {
                   ))}
                 </div>
               )}
-            {gameState.chain.deadlineAt && (
-              <div className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-edison-gold/45 bg-edison-gold/10 font-mono text-xl font-black text-edison-gold">
-                {chainSecondsLeft}
-              </div>
+            {/* Na corrente vale só o relógio de quem precisa responder */}
+            {gameState.chain.awaitingPlayerId && (
+              <p className="mt-4 flex items-center justify-center gap-2 text-xs text-white/55">
+                {gameState.chain.awaitingYou ? "Seu tempo:" : "Tempo do adversário:"}
+                <ClockChip ms={clockLeft(gameState.chain.awaitingPlayerId)} running className="text-sm" />
+              </p>
             )}
             {gameState.chain.awaitingYou && (
               <button
@@ -2322,17 +2594,6 @@ export default function DuelPlayPage() {
                 Sem resposta
               </button>
             )}
-            {!gameState.chain.awaitingYou &&
-              (gameState.chain.canForceClose || chainSecondsLeft === 0) && (
-                <button
-                  type="button"
-                  onClick={() => sendAction({ type: "force_pass_chain" })}
-                  disabled={acting}
-                  className="mt-4 rounded-lg bg-red-600 px-5 py-2 text-xs font-black text-white transition hover:bg-red-500 disabled:opacity-40"
-                >
-                  Finalizar chain
-                </button>
-              )}
           </div>
         </div>
       )}
@@ -2346,6 +2607,7 @@ export default function DuelPlayPage() {
           opponentLifePoints={gameState.opponentLifePoints}
           opponentNickname={gameState.opponentUser?.nickname ?? "Oponente"}
           onViewBoard={() => setResultHidden(true)}
+          timeout={gameState.endReason === "timeout"}
         />
       )}
       {gameState?.winnerId && resultHidden && (
@@ -2383,6 +2645,12 @@ export default function DuelPlayPage() {
                 <ArcaneCircle className="text-rose-200/[0.12]" />
               </div>
               <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[radial-gradient(ellipse_at_50%_45%,rgba(40,120,230,0.30),transparent_65%),linear-gradient(180deg,#0a1426_0%,#0c1a33_40%,#080f1d_100%)]">
+                {cosmetics.playmatUrl && (
+                  <>
+                    <CosmeticArtImage url={cosmetics.playmatUrl} className="opacity-80" />
+                    <div className="absolute inset-0" style={{ background: cosmetics.playmatTint ?? undefined }} />
+                  </>
+                )}
                 <ArcaneCircle className="text-sky-200/[0.12]" />
               </div>
               <div className="absolute inset-0 [background-image:radial-gradient(rgba(255,255,255,0.05)_1px,transparent_1.5px)] [background-size:18px_18px]" />
@@ -2415,7 +2683,7 @@ export default function DuelPlayPage() {
                     }}
                     className="shrink-0 shadow-[0_4px_10px_rgba(0,0,0,0.6)]"
                   >
-                    <CardBack className="h-[calc(var(--z)*0.54)] w-[calc(var(--z)*0.38)] rotate-180" />
+                    <CardBack opponent className="h-[calc(var(--z)*0.54)] w-[calc(var(--z)*0.38)] rotate-180" />
                   </div>
                 )
               )}
@@ -2485,6 +2753,8 @@ export default function DuelPlayPage() {
               <div className="ml-[calc(var(--z)*0.12)] flex w-[calc(var(--z)*0.71)] flex-col">
                 <DuelistHud
                   opponent
+                  clockMs={clockLeft(opponentClockId)}
+                  clockRunning={Boolean(opponentClockId && gameState?.clock?.running.includes(opponentClockId))}
                   lifePoints={gameState?.opponentLifePoints}
                   nickname={gameState?.opponentUser?.nickname}
                   image={gameState?.opponentUser?.image}
@@ -2543,6 +2813,8 @@ export default function DuelPlayPage() {
             <div className="relative flex">
               <div className="flex w-[calc(var(--z)*0.71)] flex-col justify-end">
                 <DuelistHud
+                  clockMs={clockLeft(gameState?.meId)}
+                  clockRunning={Boolean(gameState?.meId && gameState?.clock?.running.includes(gameState.meId))}
                   lifePoints={gameState?.ownLifePoints}
                   nickname={gameState?.ownUser?.nickname}
                   image={gameState?.ownUser?.image}

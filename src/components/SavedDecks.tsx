@@ -7,6 +7,8 @@ export type SavedDeck = {
   id: string;
   name: string;
   isEquipped: boolean;
+  sleeveId?: string | null; // aparência do deck (null = padrão da conta)
+  playmatId?: string | null;
   cards: { cardId: number; section: DeckSection; quantity: number; card: Card }[];
 };
 

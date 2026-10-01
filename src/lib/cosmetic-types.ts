@@ -27,6 +27,9 @@ export const NAME_EFFECTS = [
   { id: "neon", label: "Neon" },
   { id: "galaxy", label: "Galáxia" },
   { id: "ice", label: "Gelo" },
+  { id: "farao", label: "Faraó" },
+  { id: "darkmagician", label: "Dark Magician" },
+  { id: "blueeyes", label: "Blue-Eyes" },
 ] as const;
 
 export type NameEffect = (typeof NAME_EFFECTS)[number]["id"];

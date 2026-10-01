@@ -21,6 +21,9 @@ import {
   performOcgSpellAction,
   type OcgStateEvent,
 } from "@/lib/duel/ocgcore-session";
+import { settleMatch } from "@/lib/match-results";
+import { onBracketGameFinished } from "@/lib/brackets";
+import { checkClockTimeout, syncClock, type ClockBonus } from "@/lib/duel/clock";
 
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("next_phase") }),
@@ -68,10 +71,10 @@ const actionSchema = z.discriminatedUnion("type", [
 ]);
 
 const MESSAGE_SELECT_CHAIN = 16;
-const CHAIN_RESPONSE_MS = 20_000;
 
-function chainDeadline() {
-  return new Date(Date.now() + CHAIN_RESPONSE_MS).toISOString();
+// A corrente não tem mais prazo próprio: só o relógio do duelo vale.
+function chainDeadline(): string | undefined {
+  return undefined;
 }
 
 function isOcgDecision(messageType: number | null) {
@@ -360,9 +363,48 @@ async function persistDuelState(
       data: { result: "loss" },
     }),
   ]);
+
+  // Pontos do ranking e gold do Random (uma vez só por partida)
+  await settleMatch(matchId).catch((err) => console.error("[settleMatch]", matchId, err));
+  // Torneio em chaves: conta a vitória no confronto e abre o próximo duelo
+  await onBracketGameFinished(matchId).catch((err) => console.error("[brackets]", matchId, err));
 }
 
+/**
+ * Toda ação passa pelo relógio: antes, quem zerou o tempo perde; depois de uma
+ * ação aceita, desconta o tempo gasto, soma o bônus e passa a contar para quem
+ * o jogo espera agora.
+ */
 export async function POST(
+  request: Request,
+  context: { params: { id: string } }
+) {
+  const at = Date.now();
+  const matchId = context.params.id;
+  if (await checkClockTimeout(matchId)) {
+    return NextResponse.json({ error: "O tempo acabou." }, { status: 409 });
+  }
+  const body = await request.clone().json().catch(() => null);
+  const before = await prisma.match.findUnique({ where: { id: matchId }, select: { engineState: true } });
+  const chainBefore = isDuelGameState(before?.engineState) ? before.engineState.chain : undefined;
+
+  const response = await handleAction(request, context);
+  if (response.ok) {
+    const session = await auth();
+    const userId = session?.user?.id;
+    const type = body?.type as string | undefined;
+    let kind: ClockBonus["kind"] | null = null;
+    if (type === "end_turn") kind = "turn";
+    else if ((type === "activate_chain" || type === "pass_chain") && chainBefore?.awaitingPlayerId === userId) kind = "chain";
+    else if (type === "activate" || type === "summon" || type === "special_summon") kind = "action";
+    await syncClock(matchId, userId && kind ? { userId, kind, at } : undefined).catch((err) =>
+      console.error("[clock]", matchId, err)
+    );
+  }
+  return response;
+}
+
+async function handleAction(
   request: Request,
   { params }: { params: { id: string } }
 ) {
@@ -374,6 +416,12 @@ export async function POST(
   const parsed = actionSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
+  }
+  if (parsed.data.type === "force_pass_chain") {
+    return NextResponse.json(
+      { error: "Na corrente vale o relógio: se o tempo do outro duelista zerar, ele perde." },
+      { status: 409 }
+    );
   }
 
   const room = await prisma.match.findFirst({
@@ -502,23 +550,10 @@ export async function POST(
       }
     }
 
-    const forcePass = parsed.data.type === "force_pass_chain";
-    const normalPass = parsed.data.type === "pass_chain";
-    const deadlineExpired = state.chain.deadlineAt
-      ? new Date(state.chain.deadlineAt).getTime() <= Date.now()
-      : false;
-    if (
-      (!normalPass && !forcePass) ||
-      (normalPass && state.chain.awaitingPlayerId !== userId) ||
-      (forcePass &&
-        (state.chain.awaitingPlayerId === userId || !deadlineExpired))
-    ) {
+    // Só quem a corrente espera pode passar (não há prazo: vale o relógio)
+    if (parsed.data.type !== "pass_chain" || state.chain.awaitingPlayerId !== userId) {
       return NextResponse.json(
-        {
-          error: forcePass
-            ? "A chain só pode ser encerrada pelo outro jogador após os 20 segundos."
-            : "A corrente está aguardando a resposta do outro jogador.",
-        },
+        { error: "A corrente está aguardando a resposta do outro jogador." },
         { status: 409 }
       );
     }
@@ -557,7 +592,6 @@ export async function POST(
 
   if (
     parsed.data.type === "pass_chain" ||
-    parsed.data.type === "force_pass_chain" ||
     parsed.data.type === "activate_chain"
   ) {
     return NextResponse.json(

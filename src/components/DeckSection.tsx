@@ -1,6 +1,7 @@
 "use client";
 
-import type { DeckCardUI, DeckSection as Section } from "@/types/card";
+import type { Card, DeckCardUI, DeckSection as Section } from "@/types/card";
+import { CardInfoButton } from "@/components/CardDetailModal";
 
 const LABELS: Record<Section, string> = { main: "Main Deck", extra: "Extra Deck", side: "Side Deck" };
 
@@ -10,7 +11,17 @@ function cardTypeOrder(type: string) {
   return 0;
 }
 
-export function DeckSection({ section, entries, onRemove }: { section: Section; entries: DeckCardUI[]; onRemove: (id: number) => void }) {
+export function DeckSection({
+  section,
+  entries,
+  onRemove,
+  onInfo,
+}: {
+  section: Section;
+  entries: DeckCardUI[];
+  onRemove: (id: number) => void;
+  onInfo?: (card: Card) => void;
+}) {
   const total = entries.reduce((sum, entry) => sum + entry.quantity, 0);
   const sortedEntries = [...entries].sort((a, b) => {
     const typeDifference =
@@ -29,9 +40,10 @@ export function DeckSection({ section, entries, onRemove }: { section: Section; 
           <button key={`${entry.card.id}-${index}`} onClick={() => onRemove(entry.card.id)} title={`Remover ${entry.card.name}`} className="group relative overflow-hidden rounded border border-edison-border bg-black/20 hover:border-red-400">
             {entry.card.imageUrl ? <img src={entry.card.imageUrl} alt={entry.card.name} className="aspect-[421/614] w-full object-cover" /> : <span className="flex aspect-[421/614] items-center p-1 text-[9px]">{entry.card.name}</span>}
             <span className="absolute inset-0 flex items-center justify-center bg-red-950/75 text-lg font-bold opacity-0 transition group-hover:opacity-100">−</span>
+            {onInfo && <CardInfoButton name={entry.card.name} onClick={() => onInfo(entry.card)} />}
           </button>
         )))}
-        {!entries.length && <p className="col-span-full m-auto text-sm text-gray-600">Adicione cartas da sua coleção.</p>}
+        {!entries.length && <p className="col-span-full m-auto text-sm text-gray-600">Adicione cartas da sua Maleta.</p>}
       </div>
     </section>
   );
