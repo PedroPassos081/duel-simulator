@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Lock, Palette, Upload, UserRound } from "lucide-react";
+import Link from "next/link";
+import { Check, Layers, Lock, Palette, Upload, UserRound } from "lucide-react";
+import { CollectionTab } from "./CollectionTab";
 import { Avatar } from "@/components/Avatar";
 import { PlayerName } from "@/components/PlayerName";
+import { CosmeticArtImage, PlaymatView, SleeveView } from "@/components/cosmetics/CosmeticArt";
 import { GlassPanel } from "@/components/theme/PageBackdrop";
 import { COSMETIC_TYPES, RARITY_LABELS, SOURCE_LABELS } from "@/lib/cosmetic-types";
 
@@ -28,7 +31,7 @@ interface Account {
   equipped: Record<string, string>;
 }
 
-type Tab = "profile" | "customize";
+type Tab = "profile" | "collection" | "customize";
 type Feedback = { type: "success" | "error"; text: string } | null;
 
 const AVATAR_SIZE = 256;
@@ -113,6 +116,14 @@ export default function AccountPage() {
             · {account.email}
           </p>
         </div>
+        {account.username && (
+          <Link
+            href={`/perfil/${account.username}`}
+            className="ml-auto shrink-0 rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-300 hover:bg-amber-500/10"
+          >
+            Ver meu perfil
+          </Link>
+        )}
       </div>
 
       {/* ABAS */}
@@ -120,6 +131,7 @@ export default function AccountPage() {
         {(
           [
             { id: "profile", label: "Perfil", icon: UserRound },
+            { id: "collection", label: "Maleta", icon: Layers },
             { id: "customize", label: "Personalizar", icon: Palette },
           ] as const
         ).map(({ id, label, icon: Icon }) => (
@@ -139,9 +151,12 @@ export default function AccountPage() {
       {tab === "profile" ? (
         <div className="flex flex-col gap-6">
           <AvatarSection account={account} frameUrl={frameUrl} onSaved={loadAccount} />
+          <FramePicker account={account} onSaved={loadAccount} />
           <UsernameSection account={account} onSaved={loadAccount} />
           <PasswordSection hasPassword={account.hasPassword} onSaved={loadAccount} />
         </div>
+      ) : tab === "collection" ? (
+        <CollectionTab />
       ) : (
         <CustomizeSection account={account} onSaved={loadAccount} />
       )}
@@ -156,6 +171,49 @@ function Panel({ title, description, children }: { title: string; description?: 
       {description && <p className="text-xs text-zinc-400 mt-1">{description}</p>}
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+/** Troca rápida de moldura, ao lado da foto. As molduras vêm de Structure Decks, prêmios e eventos. */
+function FramePicker({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [saving, setSaving] = useState<string | null>(null);
+  const frames = account.cosmetics.filter((c) => c.type === "frame");
+  const equippedId = account.equipped.frame ?? null;
+
+  async function equip(cosmeticId: string | null) {
+    setSaving(cosmeticId ?? "none");
+    const res = await fetch("/api/account/cosmetics", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "frame", cosmeticId }),
+    });
+    setSaving(null);
+    if (res.ok) onSaved();
+  }
+
+  return (
+    <Panel title="Moldura" description="Fica em volta da sua foto no duelo, no pódio e no jornal.">
+      <div className="flex flex-wrap gap-4">
+        {[{ id: null as string | null, name: "Sem moldura", imageUrl: null as string | null }, ...frames].map((f) => {
+          const selected = equippedId === f.id;
+          return (
+            <button
+              key={f.id ?? "none"}
+              onClick={() => equip(f.id)}
+              disabled={selected || saving !== null}
+              title={f.name}
+              className={`flex flex-col items-center gap-1.5 rounded-xl border p-3 text-[11px] font-semibold transition-all ${
+                selected ? "border-amber-500 bg-amber-500/10 text-amber-300" : "border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-amber-500/50"
+              }`}
+            >
+              <Avatar image={account.image} name={account.username ?? account.name} size={56} frameUrl={f.imageUrl} />
+              <span className="max-w-[88px] truncate">{f.name}</span>
+            </button>
+          );
+        })}
+      </div>
+      {frames.length === 0 && <p className="mt-3 text-xs text-zinc-500">Você ainda não possui nenhuma moldura. Elas acompanham Structure Decks Premium e prêmios de evento.</p>}
+    </Panel>
   );
 }
 
@@ -393,10 +451,22 @@ function CustomizeSection({ account, onSaved }: { account: Account; onSaved: () 
         const owned = account.cosmetics.filter((c) => c.type === type);
         const equippedId = account.equipped[type] ?? null;
         // Estilos de nick não têm imagem: a prévia é o seu próprio nick com o efeito
-        const nickPreview = (effect: string | null) =>
-          type === "name_style" ? (
-            <PlayerName name={account.username ?? account.name} effect={effect} className="px-2 text-base font-bold text-zinc-200 truncate" />
-          ) : undefined;
+        // Sleeve, playmat e moldura mostram o item como ele aparece no jogo
+        const nickPreview = (c: { imageUrl?: string | null; effect: string | null } | null) => {
+          if (type === "name_style") {
+            return <PlayerName name={account.username ?? account.name} effect={c?.effect ?? null} className="px-2 text-base font-bold text-zinc-200 truncate" />;
+          }
+          if (type === "sleeve") {
+            return <SleeveView url={c?.imageUrl ?? "/assets/master-duelist-card-back.svg"} className="h-full" />;
+          }
+          if (type === "playmat") {
+            return <PlaymatView url={c?.imageUrl} theme={c?.effect} className="h-full w-full rounded-none border-0" />;
+          }
+          if (type === "frame") {
+            return <Avatar image={account.image} name={account.username ?? account.name} size={56} frameUrl={c?.imageUrl} />;
+          }
+          return undefined;
+        };
 
         return (
           <Panel key={type} title={label} description={description}>
@@ -416,7 +486,7 @@ function CustomizeSection({ account, onSaved }: { account: Account; onSaved: () 
                   name={c.name}
                   subtitle={`${RARITY_LABELS[c.rarity] ?? c.rarity} · ${SOURCE_LABELS[c.source] ?? c.source}`}
                   imageUrl={c.imageUrl}
-                  preview={nickPreview(c.effect)}
+                  preview={nickPreview(c)}
                   selected={equippedId === c.id}
                   loading={savingKey === `${type}-${c.id}`}
                   onSelect={() => equip(type, c.id)}
@@ -458,11 +528,11 @@ function CosmeticOption({
         selected ? "border-amber-500 bg-amber-500/10" : "border-zinc-800 bg-zinc-950/40 hover:border-amber-500/50"
       }`}
     >
-      <div className="aspect-[4/3] w-full overflow-hidden rounded-lg bg-zinc-800/60 flex items-center justify-center">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-zinc-800/60 flex items-center justify-center">
         {preview ? (
           preview
         ) : imageUrl ? (
-          <img src={imageUrl} alt={name} className="h-full w-full object-cover" loading="lazy" />
+          <CosmeticArtImage url={imageUrl} position="center" />
         ) : (
           <Palette className="w-6 h-6 text-zinc-600" />
         )}

@@ -27,13 +27,25 @@ model Card {
   level       Int?
   description String
   imageUrl    String?
+  releaseDate DateTime? // lançamento no TCG (YGOPRODeck misc_info.tcg_date)
+  // Quando a carta entrou no jogo. Vazio = entrou até o lançamento do site (todas
+  // essas contam como a mesma data). Ver src/lib/site.ts
+  siteAddedAt DateTime?
+  // Carta que já existe no banco mas ainda não foi lançada no jogo (fora da loja).
+  // Lança pelo Admin (aba Lançamentos), na hora ou num lançamento programado.
+  released    Boolean   @default(true)
+  releaseId   String?
+  release     CardRelease? @relation(fields: [releaseId], references: [id], onDelete: SetNull)
 
   banlistEntries BanlistEntry[]
+  banlistExtras  BanlistExtraCard[]
   deckCards      DeckCard[]
   structureCards StructureDeckCard[]
   shopListing    ShopListing?
   ownerships     UserCardOwnership[]
   purchases      Purchase[]
+  sales          CardSale[]
+  userVariants   UserCardVariant[]
 
   @@index([name])
 }
@@ -58,6 +70,11 @@ model User {
   name          String?
   passwordHash  String?
   role          String    @default("player") // player | admin (ver src/lib/admin.ts)
+  // Suspensão aplicada pelo Admin (null = conta liberada; ano 9999 = permanente)
+  suspendedUntil   DateTime?
+  suspensionReason String?
+  // VIP: vantagens (ex.: +30% de gold nos duelos) enquanto vipUntil estiver no futuro
+  vipUntil         DateTime?
   image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -77,6 +94,18 @@ model User {
   payments             Payment[]
   ownerships           UserCardOwnership[]
   purchases            Purchase[]
+  cardSales            CardSale[]
+  cardVariants         UserCardVariant[]
+  items                UserItem[]
+  itemTransactions     ItemTransaction[]
+  punishments          Punishment[]
+  tournamentEntries    TournamentEntry[]
+  trophies             Trophy[]
+  sentMessages         DirectMessage[] @relation("sentMessages")
+  receivedMessages     DirectMessage[] @relation("receivedMessages")
+  clanMessages         ClanMessage[]
+  reportsMade          PlayerReport[]  @relation("reportsMade")
+  reportsReceived      PlayerReport[]  @relation("reportsReceived")
   cosmetics            UserCosmetic[]
   equippedCosmetics    UserEquippedCosmetic[]
   queueEntries         MatchQueueEntry[]
@@ -135,6 +164,11 @@ model Deck {
   user       User?      @relation(fields: [userId], references: [id])
   format     String     @default("edison")
   isEquipped Boolean    @default(false)
+  // Aparência deste deck no duelo (vazio = usa a da conta, em Minha conta → Personalizar)
+  sleeveId   String?
+  sleeve     Cosmetic?  @relation("DeckSleeve", fields: [sleeveId], references: [id], onDelete: SetNull)
+  playmatId  String?
+  playmat    Cosmetic?  @relation("DeckPlaymat", fields: [playmatId], references: [id], onDelete: SetNull)
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
   cards      DeckCard[]
@@ -172,10 +206,25 @@ model Match {
   rpsWinnerId   String?
   firstPlayerId String?
 
+  // Duelo de torneio (sala do torneio); vazio = Random
+  tournamentId String?
+  tournament   Tournament? @relation(fields: [tournamentId], references: [id])
+  // Torneio em chaves: duelo N de um confronto melhor de 3
+  seriesId     String?
+  series       TournamentSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  gameNumber   Int?
+  opensAt      DateTime? // fim da tela de espera (se os dois entrarem antes, começa na hora)
+  woAt         DateTime? // quem não entrou até aqui perde este duelo por W.O.
+  // Quando os pontos e o gold do fim da partida foram gravados (evita pagar duas vezes)
+  settledAt    DateTime?
+  // Relógio do duelo: tempo de cada jogador (3:30 + bônus). Ver src/lib/duel/clock.ts
+  clock        Json?
+
   players MatchPlayer[]
   actions GameAction[]
   replay  Replay?
 
+  @@unique([seriesId, gameNumber])
   @@index([status, createdAt])
 }
 
@@ -187,8 +236,11 @@ model MatchPlayer {
   user       User     @relation(fields: [userId], references: [id])
   deckId     String
   result     String? // win | loss | draw (definido pelo motor de duelo)
+  points     Int? // pontos desta partida (tabela do Admin no momento do fim)
+  goldEarned Int? // gold pago ao fim (base + bônus de evento)
   rpsChoice  String?
   lastSeenAt DateTime @default(now())
+  joinedAt   DateTime? // torneio em chaves: entrou na sala do duelo
 
   @@unique([matchId, userId])
   @@index([matchId])
@@ -270,6 +322,9 @@ model ShopListing {
   maxTotal Int @default(3) // Limite geral da carta (ex: 1 para limitadas)
   maxGold  Int @default(2) // Quantas das primeiras cópias podem ser compradas com Gold (0 = só crédito)
   maxCash  Int @default(3) // Quantas cópias pode comprar com Cash
+
+  // Preço definido à mão no painel do Admin: "aplicar preços da categoria" não mexe nesta carta
+  customPrice Boolean @default(false)
 }
 
 model UserCardOwnership {
@@ -291,7 +346,34 @@ model Purchase {
   card         Card     @relation(fields: [cardId], references: [id])
   currencyUsed String
   amountPaid   Int
+  finish       String   @default("normal") // raridade da cópia comprada (normal | rara | ultra | secreta)
+  border       String   @default("none") // borda da cópia comprada (none | prata | ouro)
   createdAt    DateTime @default(now())
+}
+
+// Venda de cartas na loja: uma linha por cópia vendida.
+// origin = de onde a cópia tinha vindo (gold | cash = compra na loja; free = prêmio/presente).
+// Serve para saber quantas cópias de cada origem ainda restam. Regras em src/lib/card-sale-rules.ts
+model CardSale {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId    Int
+  card      Card     @relation(fields: [cardId], references: [id])
+  origin    String // gold | cash | free
+  currency  String // moeda recebida: gold | cash
+  amount    Int
+  createdAt DateTime @default(now())
+
+  @@index([userId, cardId])
+}
+
+// Configurações do jogo que o Admin muda pelo painel (ex.: "card_sale_percent" = "40").
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String? // id do admin que mudou por último
 }
 
 // ======================= PERSONALIZAÇÃO (COSMÉTICOS) =======================
@@ -308,6 +390,9 @@ model Cosmetic {
   rarity      String   @default("common") // common | rare | epic | legendary
   priceGold   Int? // null = não vendido com gold
   priceCash   Int? // null = não vendido com crédito
+  // Vitrine da aba Cosméticos da loja (o Admin coloca); trancado até shopUnlockAt
+  inShop       Boolean   @default(false)
+  shopUnlockAt DateTime?
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
 
@@ -319,6 +404,8 @@ model Cosmetic {
   structureDeck   StructureDeck? @relation(fields: [structureDeckId], references: [id], onDelete: SetNull)
 
   @@index([type])
+  decksAsSleeve  Deck[] @relation("DeckSleeve")
+  decksAsPlaymat Deck[] @relation("DeckPlaymat")
 }
 
 model UserCosmetic {
@@ -366,7 +453,7 @@ model MatchQueueEntry {
 model Season {
   id       String   @id @default(cuid())
   name     String
-  startsAt DateTime
+  startsAt DateTime @unique
   endsAt   DateTime // exclusivo: a season vale até antes deste instante
 
   @@index([startsAt, endsAt])
@@ -477,6 +564,7 @@ model Clan {
   actionRequests    ClanActionRequest[]
   vaultTransactions ClanVaultTransaction[]
   tournaments       ClanTournament[]
+  messages          ClanMessage[]
 }
 
 model ClanMember {
@@ -588,6 +676,10 @@ model StructureDeck {
   moneyPriceCents        Int?
   premiumMoneyPriceCents Int?
   moneyDiscountPercent   Int  @default(0)
+  // Preço em gold + crédito = valor das cartas avulsas (o que pagaria comprando uma a uma) com este desconto
+  discountPercent        Int  @default(30)
+  // Itens que acompanham a versão premium, ex.: [{ "item": "po_milenio_raro", "quantity": 2 }]
+  premiumItems           Json?
 
   createdAt DateTime @default(now())
 
@@ -604,6 +696,8 @@ model StructureDeckCard {
   card            Card          @relation(fields: [cardId], references: [id])
   section         String // main | extra | side
   quantity        Int
+  // Raridade das cópias que vêm no deck (normal | rara | ultra | secreta)
+  finish          String        @default("normal")
 
   @@unique([structureDeckId, cardId, section])
 }
@@ -615,9 +709,406 @@ model StructureDeckPurchase {
   structureDeckId String
   structureDeck   StructureDeck @relation(fields: [structureDeckId], references: [id])
   edition         String // base | premium
-  currency        String // cash | gold | money
-  amountPaid      Int
+  currency        String // gold+cash (os dois juntos) | money | cash | gold (compras antigas)
+  amountPaid      Int // gold (ou a única moeda, nas compras antigas)
+  amountCash      Int           @default(0) // crédito pago junto com o gold
   createdAt       DateTime      @default(now())
 
   @@index([userId, structureDeckId])
+}
+
+// ======================= RARIDADES / ITENS =======================
+// UserCardOwnership continua sendo o TOTAL de cópias de cada carta. Aqui ficam
+// só as cópias evoluídas (raridade e/ou borda); o resto é Normal sem borda.
+// Regras e itens: src/lib/card-finish.ts
+
+model UserCardVariant {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId   Int
+  card     Card   @relation(fields: [cardId], references: [id])
+  finish   String // normal | rara | ultra | secreta
+  border   String // none | prata | ouro
+  quantity Int
+
+  @@unique([userId, cardId, finish, border])
+  @@index([userId, cardId])
+}
+
+// Inventário de itens (Pó do Milênio, molduras...). Catálogo em src/lib/card-finish.ts
+model UserItem {
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemKey  String
+  quantity Int    @default(0)
+
+  @@id([userId, itemKey])
+}
+
+model ItemTransaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemKey   String
+  amount    Int // positivo = ganhou, negativo = usou
+  reason    String // prize | event | structure_premium | deposit | evolve | admin
+  refType   String?
+  refId     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ======================= PAINEL DO ADMIN =======================
+
+// Histórico de tudo o que o Admin envia (gold, crédito, cartas, cosméticos, itens)
+model AdminGrant {
+  id           String   @id @default(cuid())
+  adminId      String
+  targetUserId String
+  kind         String // currency | card | cosmetic | item
+  summary      String // descrição legível, ex.: "500 gold" ou "2x Dark Magician (Rara)"
+  reason       String // prize | event | compensation | gift
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetUserId])
+}
+
+// Punições aplicadas pelo Admin (todas exigem a senha de punição)
+model Punishment {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminId        String
+  type           String // warning | suspension | unsuspend | remove_gold | remove_cash | remove_cards | wipe_cards
+  reason         String
+  summary        String // o que foi feito, ex.: "Suspensa por 7 dias" ou "Retirados 500 gold"
+  until          DateTime? // fim da suspensão
+  acknowledgedAt DateTime? // advertência: quando o jogador clicou em "Entendi"
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ======================= TORNEIOS, TROFÉUS E EVENTOS =======================
+
+// Torneio criado pelo Admin. Os inscritos duelam numa sala própria entre startsAt
+// e endsAt; cada duelo vale os pontos do tipo (oficial ou rápido). Ao encerrar,
+// a classificação dá troféus e os prêmios de cada colocação.
+model Tournament {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  type        String // official | quick
+  format      String            @default("obelisk") // banlist da sala: slifer | obelisk
+  startsAt    DateTime
+  endsAt      DateTime
+  // Prêmios por colocação: [{ placement, rewards: [GrantPayload...] }] (ver src/lib/tournaments.ts)
+  prizes      Json              @default("[]")
+  status      String            @default("open") // open | finished | cancelled
+  finishedAt  DateTime?
+  createdById String
+  createdAt   DateTime          @default(now())
+
+  // Formato: points (duelos na sala do torneio somam pontos) | bracket (chaves, melhor de 3)
+  structure    String    @default("points")
+  maxEntrants  Int? // vagas (chaves)
+  clockSeconds Int       @default(300) // tempo de cada jogador para entrar no duelo (W.O. ao zerar)
+  activatedAt  DateTime? // chaves: o Admin ativou (os duelos abrem nos horários das chaves)
+  pausedAt     DateTime? // chaves: pausado (nenhum duelo novo abre)
+
+  entries TournamentEntry[]
+  matches Match[]
+  stages  TournamentStage[]
+  series  TournamentSeries[]
+
+  @@index([status, startsAt])
+}
+
+// Etapa de um torneio em chaves: Chave A, Chave B e a Final, cada uma com seu horário
+model TournamentStage {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  key          String // A | B | final
+  name         String
+  startsAt     DateTime
+
+  @@unique([tournamentId, key])
+}
+
+// Um confronto melhor de 3 dentro das chaves
+model TournamentSeries {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  stageKey     String // A | B | final
+  round        Int // 1 = primeira rodada da chave
+  slot         Int // posição na rodada
+  playerAId    String?
+  playerBId    String?
+  winsA        Int        @default(0)
+  winsB        Int        @default(0)
+  winnerId     String?
+  status       String     @default("pending") // pending | live | finished
+  // Quem avança: vai para nextSeriesId no lado nextSide (A ou B)
+  nextSeriesId String?
+  nextSide     String?
+  chooserId    String? // quem escolhe quem começa no próximo duelo
+  createdAt    DateTime   @default(now())
+
+  matches Match[]
+
+  @@index([tournamentId, stageKey, round])
+}
+
+model TournamentEntry {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  placement    Int? // colocação final (preenchida ao encerrar)
+  createdAt    DateTime   @default(now())
+
+  @@unique([tournamentId, userId])
+}
+
+// Estante de troféus do perfil
+model Trophy {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // official | quick | weekly | season | special
+  title     String // ex.: "Torneio Oficial de Setembro"
+  placement Int? // 1, 2, 3...
+  refType   String?
+  refId     String?
+  awardedAt DateTime @default(now())
+
+  @@index([userId, awardedAt])
+}
+
+// Evento de gold: cada duelo no período paga um bônus extra de gold
+model GoldEvent {
+  id          String   @id @default(cuid())
+  name        String
+  bonusGold   Int
+  startsAt    DateTime
+  endsAt      DateTime
+  newsPostId  String? // anúncio publicado no jornal
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([startsAt, endsAt])
+}
+
+// Fechamento de um período do ranking de Pontos (semana ou season): quem fez
+// mais pontos ganha troféu e prêmio. Uma linha por período (não paga em dobro).
+model RankingClosing {
+  id         String   @id @default(cuid())
+  kind       String // week | season
+  periodKey  String // semana: início em ISO; season: id da season
+  startsAt   DateTime
+  endsAt     DateTime
+  newsPostId String?
+  closedAt   DateTime @default(now())
+
+  @@unique([kind, periodKey])
+  @@index([kind, endsAt])
+}
+
+// Mensagem privada entre dois jogadores (aba Mensagens)
+model DirectMessage {
+  id          String    @id @default(cuid())
+  senderId    String
+  sender      User      @relation("sentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User      @relation("receivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  body        String
+  createdAt   DateTime  @default(now())
+  readAt      DateTime? // null = ainda não lida por quem recebeu
+
+  @@index([senderId, recipientId, createdAt])
+  @@index([recipientId, readAt])
+}
+
+// Chat privado do clã (só membros leem e escrevem)
+model ClanMessage {
+  id        String    @id @default(cuid())
+  clanId    String
+  clan      Clan      @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@index([clanId, createdAt])
+}
+
+// Denúncia feita no perfil de um jogador (o Admin analisa na aba Denúncias)
+model PlayerReport {
+  id           String    @id @default(cuid())
+  reporterId   String
+  reporter     User      @relation("reportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetId     String
+  target       User      @relation("reportsReceived", fields: [targetId], references: [id], onDelete: Cascade)
+  reason       String // offense | cheating | name | spam | scam | other
+  message      String
+  status       String    @default("open") // open | resolved | dismissed
+  adminNote    String?
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@index([targetId, status])
+  @@index([reporterId, createdAt])
+}
+
+// Banlists do jogo: uma por sala (slifer, obelisk) e as próprias de torneios.
+// As cartas ficam em BanlistEntry (format = id desta tabela).
+model Banlist {
+  id          String   @id // slug: "slifer", "obelisk", "torneio-de-halloween"...
+  name        String
+  kind        String   @default("tournament") // room | tournament
+  description String?
+  // Cartas que existem nesta banlist: lançadas no TCG até esta data + as extras (BanlistExtraCard).
+  // Vazio = todas as cartas do jogo.
+  poolUntil   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Mudança de banlist feita no Admin (para o anúncio no Jornal listar o que mudou)
+model BanlistChange {
+  id          String    @id @default(cuid())
+  format      String
+  cardId      Int
+  fromStatus  String // forbidden | limited | semi-limited | unlimited
+  toStatus    String
+  adminId     String
+  createdAt   DateTime  @default(now())
+  announcedAt DateTime?
+
+  @@index([format, announcedAt])
+}
+
+// Carta liberada numa banlist fora da data do pool (ex.: XYZ na Obelisco, adições da Slifer)
+model BanlistExtraCard {
+  id     String @id @default(cuid())
+  format String
+  cardId Int
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([format, cardId])
+}
+
+// Lançamento programado de cartas (ex.: "Aesir vs os Cavaleiros da Constelação").
+// Na data, as cartas entram na loja; a promoção vale nas primeiras horas.
+model CardRelease {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  releaseAt       DateTime? // vazio = ainda sem data
+  promoPercent    Int       @default(0) // desconto na loja durante a promoção
+  promoHours      Int       @default(0) // duração da promoção a partir do lançamento
+  releasedAt      DateTime?
+  calendarEventId String?
+  newsPostId      String?
+  createdAt       DateTime  @default(now())
+
+  cards Card[]
+}
+
+// ======================= PASSE DE BATALHA =======================
+// Temporada mensal com 50 níveis: trilha grátis e trilha Premium (paga em crédito).
+// XP vem dos duelos e das missões diárias/semanais (src/lib/battle-pass.ts).
+model BattlePass {
+  id               String   @id @default(cuid())
+  name             String // ex.: "Temporada 1 · O Despertar do Faraó"
+  description      String?
+  artCardId        Int? // arte do topo (carta)
+  startsAt         DateTime
+  endsAt           DateTime
+  levels           Int      @default(50)
+  xpPerLevel       Int      @default(500)
+  xpWin            Int      @default(100) // XP por duelo vencido
+  xpLoss           Int      @default(40) // XP por duelo perdido (jogar também conta)
+  premiumPriceCash Int      @default(300)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  rewards  BattlePassReward[]
+  progress BattlePassProgress[]
+}
+
+// Prêmio de um nível numa trilha (free | premium). reward = GrantPayload ou { kind: "mystery_card" }
+model BattlePassReward {
+  id     String     @id @default(cuid())
+  passId String
+  pass   BattlePass @relation(fields: [passId], references: [id], onDelete: Cascade)
+  level  Int
+  track  String // free | premium
+  reward Json
+
+  @@unique([passId, level, track])
+}
+
+model BattlePassProgress {
+  id        String     @id @default(cuid())
+  passId    String
+  pass      BattlePass @relation(fields: [passId], references: [id], onDelete: Cascade)
+  userId    String
+  xp        Int        @default(0)
+  premium   Boolean    @default(false)
+  premiumAt DateTime?
+  createdAt DateTime   @default(now())
+
+  claims BattlePassClaim[]
+
+  @@unique([passId, userId])
+}
+
+// Prêmio já resgatado (um por nível e trilha)
+model BattlePassClaim {
+  id         String             @id @default(cuid())
+  progressId String
+  progress   BattlePassProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+  level      Int
+  track      String
+  summary    String // o que o jogador recebeu (ex.: "Carta surpresa: Jinzo (Ultra)")
+  claimedAt  DateTime           @default(now())
+
+  @@unique([progressId, level, track])
+}
+
+// Missão resgatada num período (dia ou semana)
+model BattlePassMissionClaim {
+  id         String   @id @default(cuid())
+  passId     String
+  userId     String
+  missionKey String
+  periodKey  String
+  xp         Int
+  claimedAt  DateTime @default(now())
+
+  @@unique([passId, userId, missionKey, periodKey])
+}
+
+// Desafio diário ou missão da conta resgatada (periodKey: dia em Brasília, ou "once" para missões)
+model ChallengeClaim {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  periodKey String
+  summary   String
+  claimedAt DateTime @default(now())
+
+  @@unique([userId, key, periodKey])
+  @@index([userId])
 }

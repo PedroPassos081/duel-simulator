@@ -9,6 +9,10 @@
     "lint": "next lint",
     "duel:resources": "node scripts/setup-duel-resources.mjs",
     "prisma:seed": "tsx --env-file=.env prisma/seed.ts",
+    "prisma:apply-prices": "tsx --env-file=.env prisma/apply-card-prices.ts",
+    "prisma:seed-hero": "tsx --env-file=.env prisma/seed-hero-structure.ts",
+    "prisma:seed-gx": "tsx --env-file=.env prisma/seed-gx-structures.ts",
+    "prisma:seed-pass": "tsx --env-file=.env prisma/seed-battle-pass.ts",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
   },

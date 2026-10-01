@@ -45,10 +45,17 @@ export function validateDeck(
   entries: DeckCardEntry[],
   banlist: BanlistInfo[],
   ownerships?: OwnershipInfo[],
-  options: { formatLabel?: string; cardNames?: Map<number, string> } = {}
+  options: {
+    formatLabel?: string;
+    cardNames?: Map<number, string>;
+    /** A carta existe nesta sala/banlist? (pool de cartas; ausente = todas existem) */
+    inPool?: (cardId: number) => boolean;
+    /** Cartas que ainda não foram lançadas no jogo */
+    unreleased?: Set<number>;
+  } = {}
 ): DeckIssue[] {
   const issues: DeckIssue[] = [];
-  const formatLabel = options.formatLabel ?? "banlist Edison";
+  const formatLabel = options.formatLabel ?? "banlist";
   const cardLabel = (cardId: number) => options.cardNames?.get(cardId) ?? `Carta ${cardId}`;
 
   const banlistByCard = new Map(banlist.map((b) => [b.cardId, b.status]));
@@ -75,6 +82,14 @@ export function validateDeck(
   }
 
   for (const [cardId, total] of totalByCard) {
+    if (options.unreleased?.has(cardId)) {
+      issues.push({ level: "error", message: `${cardLabel(cardId)} ainda não foi lançada no jogo.` });
+      continue;
+    }
+    if (options.inPool && !options.inPool(cardId)) {
+      issues.push({ level: "error", message: `${cardLabel(cardId)} não faz parte das cartas da ${formatLabel.replace(/^banlist (d[aoe] )?/, "")}.` });
+      continue;
+    }
     const status = banlistByCard.get(cardId) ?? "unlimited";
     const maxAllowed = MAX_COPIES_BY_STATUS[status];
     if (total > maxAllowed) {

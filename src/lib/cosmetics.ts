@@ -33,8 +33,12 @@ export async function purchaseCosmetic(
 ) {
   return prisma.$transaction(async (tx) => {
     const cosmetic = await tx.cosmetic.findUnique({ where: { id: cosmeticId } });
-    if (!cosmetic || !cosmetic.active) {
+    if (!cosmetic || !cosmetic.active || !cosmetic.inShop) {
       throw new EconomyError("Item não disponível.");
+    }
+    // Vitrine trancada até a data marcada pelo Admin
+    if (cosmetic.shopUnlockAt && cosmetic.shopUnlockAt > new Date()) {
+      throw new EconomyError(`Este item libera em ${cosmetic.shopUnlockAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`);
     }
 
     const price = currency === "gold" ? cosmetic.priceGold : cosmetic.priceCash;

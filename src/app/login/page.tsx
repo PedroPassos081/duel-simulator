@@ -6,6 +6,8 @@ import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+const SUSPENDED_MESSAGE = "Sua conta está suspensa. Se achar que foi um engano, fale com a equipe.";
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -14,7 +16,8 @@ function LoginForm() {
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Vindo do login com Google de uma conta suspensa: /login?error=suspended
+  const [error, setError] = useState<string | null>(searchParams.get("error") === "suspended" ? SUSPENDED_MESSAGE : null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -30,6 +33,10 @@ function LoginForm() {
 
     setLoading(false);
 
+    if (result?.code === "suspended") {
+      setError(SUSPENDED_MESSAGE);
+      return;
+    }
     if (result?.error) {
       setError(
         "E-mail, usuário ou senha inválidos. Confirme também se o e-mail foi verificado."

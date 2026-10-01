@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ChevronDown, Layers3, Swords, Users } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, Layers3, Lock, Swords, Users } from "lucide-react";
+import { BanlistGallery } from "@/components/BanlistGallery";
+import { LiveDuels } from "@/components/LiveDuels";
+import { alertMatchFound, askNotificationPermission, keepScreenOn, unlockAlerts } from "@/lib/duel-alerts";
 import { MillenniumPyramid } from "@/components/theme/EgyptIcons";
 import { GlassPanel } from "@/components/theme/PageBackdrop";
 
@@ -20,7 +23,9 @@ interface Room {
   theme: "red" | "blue";
   waiting: number;
   deckIssues: { message: string }[];
-  banlist: { cardId: number; name: string; status: string }[];
+  banlist: { cardId: number; name: string; imageUrl: string | null; status: string }[];
+  open: boolean; // sala fechada: ainda não dá para entrar
+  opensAt: string | null;
 }
 
 type QueueStatus =
@@ -64,11 +69,6 @@ const THEMES = {
   },
 } as const;
 
-const STATUS_LABELS: Record<string, string> = {
-  forbidden: "Proibida",
-  limited: "Limitada (1)",
-  "semi-limited": "Semi-limitada (2)",
-};
 
 function formatElapsed(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -83,34 +83,65 @@ export default function RandomPage() {
   const [joining, setJoining] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
+  // Uma consulta por vez: se o servidor estiver lento, não empilha pedidos
+  const loading = useRef(false);
   const loadData = useCallback(async () => {
-    const res = await fetch("/api/random");
-    if (!res.ok) return;
-    const json: RandomData = await res.json();
-    setData(json);
-    setQueue(json.queue);
+    if (loading.current) return;
+    loading.current = true;
+    try {
+      const res = await fetch("/api/random");
+      if (!res.ok) return;
+      const json: RandomData = await res.json();
+      setData(json);
+      setQueue(json.queue);
+    } finally {
+      loading.current = false;
+    }
   }, []);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Duelo encontrado → vai para a mesa (pedra-papel-tesoura e duelo de /duel/play)
+  // Duelo encontrado → apito (e notificação, se a tela estiver em outro app) e vai para a mesa
+  const alerted = useRef<string | null>(null);
   useEffect(() => {
-    if (queue.status === "matched") router.push(`/duel/play?room=${queue.matchId}`);
+    if (queue.status !== "matched") return;
+    const url = `/duel/play?room=${queue.matchId}`;
+    if (alerted.current !== queue.matchId) {
+      alerted.current = queue.matchId;
+      alertMatchFound(url);
+    }
+    router.push(url);
   }, [queue, router]);
 
-  // Enquanto aguarda: consulta a fila (mantém a vaga viva) e atualiza o cronômetro
+  // Enquanto aguarda: consulta a fila (mantém a vaga viva) e atualiza o cronômetro.
+  // Pode sair da tela: a vaga dura alguns minutos sem consulta e, ao voltar, consulta na hora.
   useEffect(() => {
     if (queue.status !== "waiting") return;
-    const poll = setInterval(async () => {
-      const res = await fetch("/api/random/queue");
-      if (res.ok) setQueue(await res.json());
-    }, POLL_WAITING_MS);
+    let busy = false;
+    const check = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const res = await fetch("/api/random/queue");
+        if (res.ok) setQueue(await res.json());
+      } finally {
+        busy = false;
+      }
+    };
+    const poll = setInterval(check, POLL_WAITING_MS);
     const tick = setInterval(() => setNow(Date.now()), 1000);
+    const onVisible = () => document.visibilityState === "visible" && check();
+    document.addEventListener("visibilitychange", onVisible);
+    // Tela acesa enquanto espera (no celular, quando o aparelho deixa)
+    let lock: { release: () => Promise<void> } | null = null;
+    keepScreenOn().then((l) => (lock = l));
     return () => {
       clearInterval(poll);
       clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVisible);
+      lock?.release().catch(() => {});
     };
   }, [queue.status]);
 
@@ -122,6 +153,9 @@ export default function RandomPage() {
   }, [queue.status, loadData]);
 
   async function join(rooms: RoomId[]) {
+    // O toque no botão libera o som e pede a permissão de notificação
+    unlockAlerts();
+    void askNotificationPermission();
     setJoining(rooms.join("+"));
     setError(null);
     const res = await fetch("/api/random/queue", {
@@ -151,7 +185,8 @@ export default function RandomPage() {
   }
 
   const roomsById = Object.fromEntries(data.rooms.map((r) => [r.id, r])) as Record<RoomId, Room>;
-  const canJoinBoth = Boolean(data.deck) && data.rooms.every((r) => r.deckIssues.length === 0);
+  const bothOpen = data.rooms.every((r) => r.open);
+  const canJoinBoth = bothOpen && Boolean(data.deck) && data.rooms.every((r) => r.deckIssues.length === 0);
 
   return (
     <GlassPanel className="max-w-5xl">
@@ -237,11 +272,14 @@ export default function RandomPage() {
               {joining === "slifer+obelisk" ? "Entrando..." : "Aguardar nas duas"}
             </button>
           </div>
-          {data.deck && !canJoinBoth && (
+          {data.deck && bothOpen && !canJoinBoth && (
             <p className="mt-2 text-center text-xs text-zinc-500">Seu deck precisa ser válido nas duas salas.</p>
           )}
         </>
       )}
+
+      {/* Quem está duelando agora (Random e torneios): um clique para assistir */}
+      <LiveDuels />
     </GlassPanel>
   );
 }
@@ -260,6 +298,9 @@ function RoomCard({
   const [showBanlist, setShowBanlist] = useState(false);
   const theme = THEMES[room.theme];
   const deckValid = hasDeck && room.deckIssues.length === 0;
+  const opensLabel = room.opensAt
+    ? new Date(room.opensAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : null;
   const forbiddenCount = room.banlist.filter((b) => b.status === "forbidden").length;
   const restrictedCount = room.banlist.length - forbiddenCount;
 
@@ -298,27 +339,20 @@ function RoomCard({
             <Users className="w-3.5 h-3.5" />
             {room.waiting === 0 ? "Ninguém aguardando" : `${room.waiting} aguardando`}
           </span>
-          <button onClick={() => setShowBanlist((v) => !v)} className="flex items-center gap-1 hover:text-zinc-200">
+          <span>
             Banlist:{" "}
             {room.banlist.length === 0 ? "sem restrições ainda" : `${forbiddenCount} proibida(s), ${restrictedCount} limitada(s)`}
-            {room.banlist.length > 0 && (
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showBanlist ? "rotate-180" : ""}`} />
-            )}
-          </button>
+          </span>
         </div>
 
-        {showBanlist && room.banlist.length > 0 && (
-          <ul className="max-h-48 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs">
-            {room.banlist.map((b) => (
-              <li key={b.cardId} className="flex justify-between gap-2 py-0.5">
-                <span className="truncate text-zinc-300">{b.name}</span>
-                <span className={b.status === "forbidden" ? "text-red-400" : "text-amber-400"}>
-                  {STATUS_LABELS[b.status] ?? b.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* A banlist da sala em imagens */}
+        <button
+          onClick={() => setShowBanlist(true)}
+          className={`flex items-center justify-center gap-1.5 self-start rounded-lg border px-3 py-1.5 text-xs font-bold backdrop-blur-sm transition hover:brightness-125 ${theme.badge}`}
+        >
+          <Ban className="h-3.5 w-3.5" /> Ver banlist da sala
+        </button>
+        {showBanlist && <BanlistGallery title={`Banlist da ${room.name}`} cards={room.banlist} onClose={() => setShowBanlist(false)} />}
 
         {/* VALIDADE DO DECK */}
         {hasDeck &&
@@ -339,12 +373,19 @@ function RoomCard({
           ))}
       </div>
 
+      {/* Sala fechada: selo com a data de abertura */}
+      {!room.open && (
+        <div className="relative mt-4 flex items-center justify-center gap-2 rounded-lg border border-amber-500/40 bg-black/70 px-3 py-2 text-sm font-bold text-amber-200 backdrop-blur-sm">
+          <Lock className="h-4 w-4" />
+          {opensLabel ? `Abre em ${opensLabel}` : "Fechada · em breve"}
+        </div>
+      )}
       <button
         onClick={onJoin}
-        disabled={!deckValid || joining}
+        disabled={!room.open || !deckValid || joining}
         className={`relative mt-5 rounded-lg px-4 py-2.5 text-sm font-bold transition-colors disabled:bg-zinc-800 disabled:text-zinc-600 disabled:shadow-none ${theme.button}`}
       >
-        {joining ? "Entrando..." : `Entrar na ${room.name}`}
+        {!room.open ? "Sala fechada" : joining ? "Entrando..." : `Entrar na ${room.name}`}
       </button>
     </section>
   );
@@ -383,7 +424,9 @@ function WaitingPanel({ rooms, elapsed, onCancel }: { rooms: Room[]; elapsed: st
         </p>
       </div>
       <p className="font-mono text-3xl text-zinc-200">{elapsed}</p>
-      <p className="text-xs text-zinc-500">Deixe esta página aberta. O duelo começa sozinho.</p>
+      <p className="max-w-sm text-xs text-zinc-400">
+        Pode usar outros apps: você continua na fila por até 10 minutos. Quando o duelo sair, toca um apito e chega uma notificação. Volte em até 45 segundos para não perder o duelo.
+      </p>
       <button
         onClick={onCancel}
         className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"

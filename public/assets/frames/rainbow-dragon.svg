@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <!-- anel com as sete cores das Bestas de Cristal -->
+    <linearGradient id="rainbow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ef4444"/>
+      <stop offset="0.17" stop-color="#f97316"/>
+      <stop offset="0.33" stop-color="#facc15"/>
+      <stop offset="0.5" stop-color="#22c55e"/>
+      <stop offset="0.67" stop-color="#3b82f6"/>
+      <stop offset="0.83" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="gem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.15"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- anel principal, centro transparente para a foto de perfil -->
+  <g filter="url(#glow)">
+    <circle cx="100" cy="100" r="86" stroke="url(#rainbow)" stroke-width="6"/>
+    <circle cx="100" cy="100" r="79" stroke="#e0f2fe" stroke-opacity="0.5" stroke-width="1"/>
+    <circle cx="100" cy="100" r="92" stroke="url(#rainbow)" stroke-opacity="0.5" stroke-width="1"/>
+  </g>
+  <!-- sete cristais em volta (rubi, ametista, esmeralda, topázio, âmbar, cobalto, safira) -->
+  <g filter="url(#glow)" stroke="#0f172a" stroke-width="1" stroke-linejoin="round">
+    <path d="M100 2 L108 14 L100 26 L92 14 Z" fill="#ef4444"/>
+    <path d="M100 2 L108 14 L100 26 L92 14 Z" fill="url(#gem)" opacity="0.45"/>
+    <g transform="rotate(51.4 100 100)"><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="#a855f7"/><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="url(#gem)" opacity="0.45"/></g>
+    <g transform="rotate(102.8 100 100)"><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="#22c55e"/><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="url(#gem)" opacity="0.45"/></g>
+    <g transform="rotate(154.2 100 100)"><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="#facc15"/><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="url(#gem)" opacity="0.45"/></g>
+    <g transform="rotate(205.6 100 100)"><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="#f97316"/><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="url(#gem)" opacity="0.45"/></g>
+    <g transform="rotate(257 100 100)"><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="#2563eb"/><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="url(#gem)" opacity="0.45"/></g>
+    <g transform="rotate(308.4 100 100)"><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="#38bdf8"/><path d="M100 4 L107 15 L100 25 L93 15 Z" fill="url(#gem)" opacity="0.45"/></g>
+  </g>
+  <!-- brilhos -->
+  <g fill="#ffffff" opacity="0.9">
+    <circle cx="36" cy="44" r="1.6"/>
+    <circle cx="166" cy="52" r="1.4"/>
+    <circle cx="28" cy="150" r="1.3"/>
+    <circle cx="172" cy="152" r="1.6"/>
+  </g>
+</svg>

@@ -6,8 +6,8 @@ import { listStructureDecks, purchaseStructureDeck } from "@/lib/structure-decks
 
 const purchaseSchema = z.object({
   structureDeckId: z.string().min(1),
-  edition: z.enum(["base", "premium"]),
-  currency: z.enum(["cash", "gold", "money"]),
+  edition: z.enum(["base", "premium", "upgrade"]),
+  currency: z.enum(["coins", "money"]),
 });
 
 async function getUserId() {

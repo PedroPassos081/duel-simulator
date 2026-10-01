@@ -1,7 +1,11 @@
+import { closeFinishedPeriods } from "@/lib/ranking-closing";
+import { processDueReleases } from "@/lib/card-releases";
 import Link from "next/link";
 import { MessageCircle, Newspaper, Pin, Plus } from "lucide-react";
 import { MiniCalendar } from "@/components/MiniCalendar";
+import { ArtBanner } from "@/components/theme/ArtBanner";
 import { GlassPanel } from "@/components/theme/PageBackdrop";
+import { ART } from "@/lib/card-art";
 import { getViewer } from "@/lib/admin-server";
 import { formatDate } from "@/lib/dates";
 import { POST_TYPES, isPostType, listPosts } from "@/lib/news";
@@ -9,6 +13,8 @@ import { POST_TYPES, isPostType, listPosts } from "@/lib/news";
 export const dynamic = "force-dynamic";
 
 export default async function JornalPage({ searchParams }: { searchParams: { tipo?: string } }) {
+  // O resultado da semana/season que acabou sai no Jornal
+  await Promise.all([closeFinishedPeriods(), processDueReleases()]);
   const type = isPostType(searchParams.tipo) ? searchParams.tipo : undefined;
   const [posts, viewer] = await Promise.all([listPosts(type), getViewer()]);
 
@@ -19,14 +25,20 @@ export default async function JornalPage({ searchParams }: { searchParams: { tip
 
   return (
     <GlassPanel className="max-w-6xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-zinc-800 pb-5">
-        <div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold text-zinc-100 tracking-tight">
-            <Newspaper className="w-7 h-7 text-amber-400" />
+      {/* Messenger of Peace: o mensageiro que traz as notícias do reino dos duelistas */}
+      <ArtBanner
+        art={ART.messengerOfPeace}
+        eyebrow="Mensageiro da Paz"
+        title={
+          <span className="flex items-center gap-2">
+            <Newspaper className="h-7 w-7 text-amber-300" />
             Jornal
-          </h1>
-          <p className="text-sm text-zinc-400 mt-1">Notícias, avisos e resultados de torneios.</p>
-        </div>
+          </span>
+        }
+        subtitle="Notícias, avisos e resultados de torneios do reino dos duelistas."
+        tone="gold"
+        position="center 35%"
+      >
         {/* Publicar é exclusivo do Admin */}
         {viewer?.isAdmin && (
           <Link
@@ -36,7 +48,7 @@ export default async function JornalPage({ searchParams }: { searchParams: { tip
             <Plus className="h-4 w-4" /> Nova publicação
           </Link>
         )}
-      </div>
+      </ArtBanner>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0">

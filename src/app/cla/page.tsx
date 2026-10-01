@@ -1,9 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CircleDollarSign, Gem, Shield, Users } from "lucide-react";
+import { Shield, Users } from "lucide-react";
+import { GoldIcon, CreditIcon } from "@/components/theme/CurrencyIcons";
 import { CLAN_MAX_MEMBERS, canManageInvites, decideSettings, decideVault, roleLabel } from "@/lib/clans/roles";
+import { ArtBanner } from "@/components/theme/ArtBanner";
 import { GlassPanel } from "@/components/theme/PageBackdrop";
+import { ART, cardArt, clanArchetype } from "@/lib/card-art";
 import type { Act, ClanData, NoClanData } from "./types";
 import {
   DonationTab,
@@ -15,8 +18,9 @@ import {
   VaultTab,
 } from "./sections";
 import { Panel, inputClass, primaryButton } from "./ui";
+import { ChatTab } from "./ChatTab";
 
-type Tab = "members" | "vault" | "tournaments" | "requests" | "invites" | "donation" | "settings";
+type Tab = "chat" | "members" | "vault" | "tournaments" | "requests" | "invites" | "donation" | "settings";
 
 export default function ClanPage() {
   const [data, setData] = useState<ClanData | NoClanData | null>(null);
@@ -77,15 +81,19 @@ function NoClanView({ data, act }: { data: NoClanData; act: Act }) {
 
   return (
     <>
-      <div className="mb-6 border-b border-zinc-800 pb-5">
-        <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-zinc-100">
-          <Shield className="w-7 h-7 text-amber-400" />
-          Clã
-        </h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Você ainda não está em um clã. Crie o seu, aceite um convite ou peça para entrar em um.
-        </p>
-      </div>
+      <ArtBanner
+        art={ART.gravekeeperChief}
+        eyebrow="Coveiros · Invocados · Necrovale"
+        title={
+          <span className="flex items-center gap-2">
+            <Shield className="h-7 w-7 text-amber-300" />
+            Clã
+          </span>
+        }
+        subtitle="Você ainda não está em um clã. Crie o seu, aceite um convite ou peça para entrar em um."
+        tone="gold"
+        position="center 30%"
+      />
 
       <div className="grid gap-6 md:grid-cols-2">
         <Panel title="Criar um clã" description="Você será o líder. Até 20 membros por clã.">
@@ -150,20 +158,30 @@ function NoClanView({ data, act }: { data: NoClanData; act: Act }) {
               const full = clan._count.members >= CLAN_MAX_MEMBERS;
               const requested = requestedClanIds.has(clan.id);
               const myRequest = data.myRequests.find((r) => r.clan.id === clan.id);
+              const archetype = clanArchetype(clan.id);
               return (
-                <li key={clan.id} className="flex flex-col gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
-                  <div className="flex items-center justify-between gap-2">
+                <li key={clan.id} className="group relative flex flex-col gap-2 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 p-4 transition-colors hover:border-amber-500/50">
+                  <img
+                    src={cardArt(archetype.art)}
+                    alt=""
+                    aria-hidden
+                    style={{ objectPosition: archetype.position }}
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40 transition-transform duration-700 group-hover:scale-105"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-zinc-950/95 via-zinc-950/75 to-zinc-950/30" />
+                  <p className="relative text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-300/80">{archetype.name}</p>
+                  <div className="relative flex items-center justify-between gap-2">
                     <h3 className="font-bold text-zinc-100">{clan.name}</h3>
-                    <span className="flex items-center gap-1 text-xs text-zinc-400">
+                    <span className="flex items-center gap-1 text-xs text-zinc-300">
                       <Users className="w-3.5 h-3.5" />
                       {clan._count.members}/{CLAN_MAX_MEMBERS}
                     </span>
                   </div>
-                  {clan.description && <p className="text-sm text-zinc-400">{clan.description}</p>}
+                  {clan.description && <p className="relative text-sm text-zinc-300">{clan.description}</p>}
                   {requested && myRequest ? (
                     <button
                       onClick={() => act({ action: "cancel_own_request", joinRequestId: myRequest.id })}
-                      className="self-start rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                      className="relative self-start rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
                     >
                       Pedido enviado · Cancelar
                     </button>
@@ -171,7 +189,7 @@ function NoClanView({ data, act }: { data: NoClanData; act: Act }) {
                     <button
                       onClick={() => act({ action: "request_join", clanId: clan.id })}
                       disabled={full}
-                      className={`${primaryButton} self-start`}
+                      className={`${primaryButton} relative self-start`}
                     >
                       {full ? "Clã cheio" : "Pedir para entrar"}
                     </button>
@@ -191,9 +209,11 @@ function ClanView({ data, act }: { data: ClanData; act: Act }) {
   const role = data.me.role;
   const pendingForMe = data.requests.filter((r) => r.canDecide).length;
   const pendingJoins = data.joinRequests.filter((j) => j.type === "request").length;
+  const archetype = clanArchetype(data.clan.id);
 
   const tabs: { id: Tab; label: string; badge?: number; show: boolean }[] = [
     { id: "members", label: "Membros", show: true },
+    { id: "chat", label: "Chat", show: true },
     { id: "vault", label: "Cofre", show: true },
     { id: "tournaments", label: "Torneios", show: true },
     { id: "requests", label: "Pedidos", badge: pendingForMe, show: true },
@@ -204,30 +224,38 @@ function ClanView({ data, act }: { data: ClanData; act: Act }) {
 
   return (
     <>
-      {/* CABEÇALHO */}
-      <div className="mb-6 flex flex-col gap-4 border-b border-zinc-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-zinc-100">
-            <Shield className="w-7 h-7 shrink-0 text-amber-400" />
+      <ArtBanner
+        art={archetype.art}
+        eyebrow={`${archetype.name} · ${archetype.tagline}`}
+        title={
+          <span className="flex items-center gap-2">
+            <Shield className="h-7 w-7 shrink-0 text-amber-300" />
             <span className="truncate">{data.clan.name}</span>
-          </h1>
-          {data.clan.description && <p className="mt-1 text-sm text-zinc-400">{data.clan.description}</p>}
-          <p className="mt-1 text-xs text-zinc-500">
-            {data.members.length}/{CLAN_MAX_MEMBERS} membros · Você é <strong className="text-zinc-300">{roleLabel(role)}</strong>
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2.5">
-          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Cofre</span>
+          </span>
+        }
+        subtitle={
+          <>
+            {data.clan.description && <span className="block">{data.clan.description}</span>}
+            <span className="text-xs text-zinc-400">
+              {data.members.length}/{CLAN_MAX_MEMBERS} membros · Você é <strong className="text-zinc-200">{roleLabel(role)}</strong>
+            </span>
+          </>
+        }
+        tone={archetype.tone}
+        position={archetype.position}
+      >
+        <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-black/50 px-4 py-2.5 backdrop-blur-sm">
+          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Cofre</span>
           <span className="flex items-center gap-1.5 font-bold text-amber-400">
-            <CircleDollarSign className="w-4 h-4" />
+            <GoldIcon className="w-4 h-4" />
             {data.clan.vaultGold}
           </span>
           <span className="flex items-center gap-1.5 font-bold text-purple-400">
-            <Gem className="w-4 h-4" />
+            <CreditIcon className="w-4 h-4" />
             {data.clan.vaultCash}
           </span>
         </div>
-      </div>
+      </ArtBanner>
 
       {/* ABAS */}
       <div className="mb-6 flex flex-wrap gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
@@ -252,6 +280,7 @@ function ClanView({ data, act }: { data: ClanData; act: Act }) {
       </div>
 
       {tab === "members" && <MembersTab data={data} act={act} />}
+      {tab === "chat" && <ChatTab />}
       {tab === "vault" && <VaultTab data={data} act={act} canDistribute={decideVault(role).kind !== "forbidden"} />}
       {tab === "tournaments" && <TournamentsTab data={data} act={act} canManage={decideVault(role).kind !== "forbidden"} />}
       {tab === "requests" && <RequestsTab data={data} act={act} />}

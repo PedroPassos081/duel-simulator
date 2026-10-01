@@ -1,6 +1,6 @@
 import "server-only";
 
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -9,8 +9,14 @@ import argon2 from "argon2";
 import { authConfig } from "@/auth.config";
 import { prisma } from "@/lib/prisma";
 import { loginSchema } from "@/lib/validation";
+import { isSuspended, isUserSuspended } from "@/lib/suspension";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+// Conta suspensa pelo Admin: a tela de login mostra "conta suspensa" (código "suspended")
+class AccountSuspendedError extends CredentialsSignin {
+  code = "suspended";
+}
+
+const nextAuth = NextAuth({
   ...authConfig,
 
   adapter: PrismaAdapter(prisma),
@@ -76,6 +82,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw new Error("EMAIL_NOT_VERIFIED");
         }
 
+        if (isSuspended(user)) {
+          throw new AccountSuspendedError();
+        }
+
         await prisma.user.update({
           where: { id: user.id },
           data: { lastLoginAt: new Date() },
@@ -97,6 +107,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const dbUser = await prisma.user.findUnique({
           where: { email: user.email.toLowerCase() },
         });
+
+        if (dbUser && isSuspended(dbUser)) {
+          return "/login?error=suspended";
+        }
 
         if (dbUser) {
           await prisma.$transaction([
@@ -135,3 +149,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+export const { handlers, signIn, signOut } = nextAuth;
+
+// Sessão de conta suspensa conta como deslogada (ver src/lib/suspension.ts)
+export async function auth() {
+  const session = await nextAuth.auth();
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (userId && (await isUserSuspended(userId))) return null;
+  return session;
+}
