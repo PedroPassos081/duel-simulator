@@ -29,3 +29,7 @@ O servidor Node verifica duelos a cada minuto e cancela salas após duas horas a
 Para limpar salas vencidas manualmente, execute npm run duel:expire. O comando usa o banco configurado no .env. Em hospedagem serverless ou com suspensão do processo, programe esse comando em um agendador externo; o timer interno exige servidor persistente. A verificação ao acessar uma sala também aplica o limite.
 
 O cliente Prisma usa no máximo três conexões por processo por padrão; connection_limit definido na URL do banco tem precedência.
+
+## Testes temporários na Slifer
+
+A configuração SiteSetting slifer_allow_unreleased_for_testing=true permite usar cartas ainda não lançadas na validação da fila Slifer. Para encerrar a exceção, altere o valor para false. A exceção não libera cartas na loja e não se aplica a torneios nem às outras salas. Tamanho do deck, limite geral de três cópias e posse das cartas continuam sendo validados. A configuração anterior da banlist temporariamente suspensa foi preservada em temporary_banlist_backup:slifer.

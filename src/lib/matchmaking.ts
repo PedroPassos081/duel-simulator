@@ -51,10 +51,11 @@ export async function validateDeckForRooms(userId: string) {
   const deck = await getEquippedDeck(userId);
   if (!deck) return { deck: null, issuesByRoom: null };
 
-  const [banlist, ownerships, pools] = await Promise.all([
+  const [banlist, ownerships, pools, sliferTestMode] = await Promise.all([
     prisma.banlistEntry.findMany({ where: { format: { in: DUEL_ROOMS.map((r) => r.id) } } }),
     prisma.userCardOwnership.findMany({ where: { userId } }),
     getPools(DUEL_ROOMS.map((r) => r.id)),
+    prisma.siteSetting.findUnique({ where: { key: "slifer_allow_unreleased_for_testing" } }),
   ]);
   const cardNames = new Map(deck.cards.map((c) => [c.cardId, c.card.name]));
   const cardById = new Map(deck.cards.map((c) => [c.cardId, { id: c.cardId, releaseDate: c.card.releaseDate }]));
@@ -74,7 +75,12 @@ export async function validateDeckForRooms(userId: string) {
           .filter((b) => b.format === room.id)
           .map((b) => ({ cardId: b.cardId, status: b.status as BanlistInfo["status"] })),
         ownerships,
-        { formatLabel: `banlist da ${room.name}`, cardNames, unreleased, inPool: (id) => isInPool(cardById.get(id)!, pools.get(room.id)!) }
+        {
+          formatLabel: `banlist da ${room.name}`,
+          cardNames,
+          unreleased: room.id === "slifer" && sliferTestMode?.value === "true" ? undefined : unreleased,
+          inPool: (id) => isInPool(cardById.get(id)!, pools.get(room.id)!),
+        }
       ).filter((i) => i.level === "error"),
     ])
   ) as Record<DuelRoomId, DeckIssue[]>;
