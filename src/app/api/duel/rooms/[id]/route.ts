@@ -1,3 +1,4 @@
+import { duelAppearance, duelUserSelect } from "@/lib/duel/appearance";
 import { withRoomLock } from "@/lib/duel/room-lock";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
@@ -85,7 +86,7 @@ export async function GET(
           userId: true,
           result: true,
           rpsChoice: true,
-          user: { select: { name: true, username: true, image: true } },
+          user: { select: duelUserSelect },
         },
       },
     },
@@ -165,7 +166,7 @@ export async function GET(
               userId: true,
               result: true,
               rpsChoice: true,
-              user: { select: { name: true, username: true, image: true } },
+              user: { select: duelUserSelect },
             },
           },
         },
@@ -188,7 +189,7 @@ export async function GET(
                 userId: true,
                 result: true,
                 rpsChoice: true,
-                user: { select: { name: true, username: true, image: true } },
+                user: { select: duelUserSelect },
               },
             },
           },
@@ -395,24 +396,8 @@ export async function GET(
               .filter(Boolean),
             ownLifePoints: ownState.lifePoints ?? 8_000,
             opponentLifePoints: opponentState?.lifePoints ?? 8_000,
-            ownUser: {
-              nickname:
-                room.players.find((player) => player.userId === userId)?.user
-                  .username ??
-                room.players.find((player) => player.userId === userId)?.user
-                  .name ??
-                "Duelista",
-              image:
-                room.players.find((player) => player.userId === userId)?.user
-                  .image ?? null,
-            },
-            opponentUser: {
-              nickname:
-                opponentPlayer?.user.username ??
-                opponentPlayer?.user.name ??
-                "Oponente",
-              image: opponentPlayer?.user.image ?? null,
-            },
+            ownUser: duelAppearance(room.players.find(player => player.userId === userId)?.user),
+            opponentUser: duelAppearance(opponentPlayer?.user),
             winnerId: storedState.winnerId ?? null,
             youWon: storedState.winnerId
               ? storedState.winnerId === userId

@@ -1,4 +1,7 @@
 "use client";
+import { Avatar } from "@/components/Avatar";
+import { PlayerName } from "@/components/PlayerName";
+
 
 import Image from "next/image";
 import {
@@ -155,6 +158,8 @@ function BracketNextPanel({ info }: { info: BracketRoomInfo }) {
   );
 }
 
+type DuelUserAppearance = { nickname: string; image: string | null; frameUrl: string | null; nameEffect: string | null; sleeveUrl: string | null; playmatUrl: string | null; playmatEffect: string | null };
+
 type RoomGameState = {
   meId: string;
   clock?: ClockView | null;
@@ -175,8 +180,8 @@ type RoomGameState = {
   opponentBanished: Card[];
   ownLifePoints: number;
   opponentLifePoints: number;
-  ownUser: { nickname: string; image: string | null };
-  opponentUser: { nickname: string; image: string | null };
+  ownUser: DuelUserAppearance;
+  opponentUser: DuelUserAppearance;
   winnerId?: string | null;
   youWon?: boolean | null;
   isYourTurn: boolean;
@@ -358,20 +363,18 @@ function fanTransform(index: number, count: number, opponent = false) {
   return `translateY(calc(var(--z) * ${drop})) rotate(${angle}deg)`;
 }
 
-// Sleeve e playmat equipados por quem está jogando (o do oponente ainda não é enviado pela sala).
-const CosmeticsContext = createContext<{ sleeveUrl: string | null; playmatUrl: string | null; playmatTint: string | null }>({
-  sleeveUrl: null,
-  playmatUrl: null,
-  playmatTint: null,
-});
+type DuelCosmetics = { sleeveUrl: string | null; playmatUrl: string | null; playmatTint: string | null; opponentSleeveUrl: string | null; opponentPlaymatUrl: string | null; opponentPlaymatTint: string | null };
+const DEFAULT_COSMETICS: DuelCosmetics = { sleeveUrl: null, playmatUrl: null, playmatTint: null, opponentSleeveUrl: null, opponentPlaymatUrl: null, opponentPlaymatTint: null };
+const CosmeticsContext = createContext<DuelCosmetics>(DEFAULT_COSMETICS);
 
 const PLAYMAT_TINTS: Record<string, string> = {
   brasil: "linear-gradient(180deg, rgba(0,80,40,0.55), rgba(0,30,90,0.55))",
 };
 
 function CardBack({ className = "h-full w-full", opponent = false }: { className?: string; opponent?: boolean }) {
-  const { sleeveUrl } = useContext(CosmeticsContext);
-  if (sleeveUrl && !opponent) {
+  const cosmetics = useContext(CosmeticsContext);
+  const sleeveUrl = opponent ? cosmetics.opponentSleeveUrl : cosmetics.sleeveUrl;
+  if (sleeveUrl) {
     return (
       <div className={`relative overflow-hidden rounded-[3px] bg-black ${className}`}>
         <CosmeticArtImage url={sleeveUrl} />
@@ -1062,6 +1065,8 @@ function DuelistHud({
   lifePoints = 8_000,
   nickname,
   image,
+  frameUrl,
+  nameEffect,
   clockMs = null,
   clockRunning = false,
 }: {
@@ -1069,6 +1074,8 @@ function DuelistHud({
   lifePoints?: number;
   nickname?: string;
   image?: string | null;
+  frameUrl?: string | null;
+  nameEffect?: string | null;
   clockMs?: number | null;
   clockRunning?: boolean;
 }) {
@@ -1080,33 +1087,14 @@ function DuelistHud({
         opponent ? "border-rose-400/30" : "border-sky-400/30"
       }`}
     >
-      <div
-        className={`relative flex aspect-square w-[calc(var(--z)*0.3)] items-center justify-center overflow-hidden rounded-full border-2 ${
-          opponent
-            ? "border-rose-400/80 bg-rose-950/60 text-rose-200"
-            : "border-sky-400/80 bg-sky-950/60 text-sky-200"
-        }`}
-      >
-        {image ? (
-          <Image
-            src={image}
-            alt={name}
-            fill
-            sizes="48px"
-            className="object-cover"
-            unoptimized
-          />
-        ) : opponent ? (
-          <Bot className="h-1/2 w-1/2" />
-        ) : (
-          <Swords className="h-1/2 w-1/2" />
-        )}
+      <div className="my-1 flex items-center justify-center">
+        <Avatar image={image} name={name} frameUrl={frameUrl} size={48} />
       </div>
       <p className={`mt-1 w-full truncate px-0.5 text-center font-bold ${UI_TEXT}`}>
         {/* Nome abre o perfil numa nova aba (sem sair do duelo) */}
         {nickname ? (
           <a href={`/perfil/${encodeURIComponent(nickname)}`} target="_blank" rel="noopener" className="hover:underline" title={`Ver perfil de @${nickname}`}>
-            {name}
+            <PlayerName name={name} effect={nameEffect} link={false} />
           </a>
         ) : (
           name
@@ -1156,6 +1144,8 @@ function DuelResultScreen({
   youWon,
   nickname,
   image,
+  frameUrl,
+  nameEffect,
   ownLifePoints,
   opponentLifePoints,
   opponentNickname,
@@ -1166,6 +1156,8 @@ function DuelResultScreen({
   youWon: boolean;
   nickname: string;
   image: string | null;
+  frameUrl?: string | null;
+  nameEffect?: string | null;
   ownLifePoints: number;
   opponentLifePoints: number;
   opponentNickname: string;
@@ -1270,21 +1262,8 @@ function DuelResultScreen({
                 : "bg-[conic-gradient(from_0deg,#fecaca,#ef4444,#7f1d1d,#ef4444,#fecaca)] shadow-[0_0_40px_rgba(220,38,38,0.55)]"
             }`}
           >
-            <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-[#15171f]">
-              {image ? (
-                <Image
-                  src={image}
-                  alt={nickname}
-                  fill
-                  sizes="112px"
-                  className={`object-cover ${youWon ? "" : "grayscale-[0.6]"}`}
-                  unoptimized
-                />
-              ) : (
-                <span className="text-4xl font-black text-white/85">
-                  {nickname.charAt(0).toUpperCase()}
-                </span>
-              )}
+            <div className="relative flex h-full w-full items-center justify-center rounded-full bg-[#15171f]">
+              <Avatar image={image} name={nickname} frameUrl={frameUrl} size={96} />
               {!youWon && (
                 <div className="absolute inset-0 bg-red-900/30 mix-blend-multiply" />
               )}
@@ -1297,7 +1276,7 @@ function DuelResultScreen({
             )}
           </div>
 
-          <p className="relative mt-3 truncate text-lg font-black">{nickname}</p>
+          <p className="relative mt-3 truncate text-lg font-black"><PlayerName name={nickname} effect={nameEffect} link={false} /></p>
 
           <h2
             className={`relative mt-4 bg-[length:200%_auto] bg-clip-text text-5xl font-black uppercase tracking-[0.12em] text-transparent animate-[title-shine_4s_linear_infinite] motion-reduce:animate-none ${
@@ -1631,37 +1610,11 @@ function PreDuelGate({
 }
 
 export default function DuelPlayPage() {
-  const [cosmetics, setCosmetics] = useState({ sleeveUrl: null as string | null, playmatUrl: null as string | null, playmatTint: null as string | null });
-
-  useEffect(() => {
-    fetch("/api/account")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((account) => {
-        if (!account) return;
-        const find = (type: string) =>
-          (account.cosmetics as { id: string; type: string; imageUrl: string | null; effect: string | null }[]).find(
-            // O deck equipado pode ter a própria sleeve/playmat; senão vale a da conta
-            (c) => c.id === (account.deckStyle?.[type] ?? account.equipped?.[type])
-          );
-        const sleeve = find("sleeve");
-        const playmat = find("playmat");
-        setCosmetics({
-          sleeveUrl: sleeve?.imageUrl ?? null,
-          playmatUrl: playmat?.imageUrl ?? null,
-          playmatTint: playmat?.effect ? PLAYMAT_TINTS[playmat.effect] ?? null : null,
-        });
-      })
-      .catch(() => {});
-  }, []);
-
-  return (
-    <CosmeticsContext.Provider value={cosmetics}>
-      <DuelPlayBoard />
-    </CosmeticsContext.Provider>
-  );
+  const [cosmetics, setCosmetics] = useState<DuelCosmetics>(DEFAULT_COSMETICS);
+  return <CosmeticsContext.Provider value={cosmetics}><DuelPlayBoard onCosmeticsChange={setCosmetics} /></CosmeticsContext.Provider>;
 }
 
-function DuelPlayBoard() {
+function DuelPlayBoard({ onCosmeticsChange }: { onCosmeticsChange: (value: DuelCosmetics) => void }) {
   const cosmetics = useContext(CosmeticsContext);
   const [roomId, setRoomId] = useState<string>();
   const [deck, setDeck] = useState<EquippedDeck>();
@@ -2000,7 +1953,17 @@ function DuelPlayBoard() {
       }}
     >
       {roomId && (
-        <PreDuelGate roomId={roomId} onGameState={setGameState} />
+        <PreDuelGate roomId={roomId} onGameState={(game) => {
+          setGameState(game);
+          if (game) onCosmeticsChange({
+            sleeveUrl: game.ownUser.sleeveUrl,
+            playmatUrl: game.ownUser.playmatUrl,
+            playmatTint: PLAYMAT_TINTS[game.ownUser.playmatEffect ?? ""] ?? null,
+            opponentSleeveUrl: game.opponentUser.sleeveUrl,
+            opponentPlaymatUrl: game.opponentUser.playmatUrl,
+            opponentPlaymatTint: PLAYMAT_TINTS[game.opponentUser.playmatEffect ?? ""] ?? null,
+          });
+        }} />
       )}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_10%,rgba(190,40,60,0.16),transparent_42%),radial-gradient(circle_at_62%_95%,rgba(40,110,230,0.16),transparent_45%),radial-gradient(circle_at_60%_50%,rgba(224,178,60,0.05),transparent_55%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:radial-gradient(rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:26px_26px]" />
@@ -2635,6 +2598,8 @@ function DuelPlayBoard() {
           youWon={Boolean(gameState.youWon)}
           nickname={gameState.ownUser?.nickname ?? "Você"}
           image={gameState.ownUser?.image ?? null}
+          frameUrl={gameState.ownUser?.frameUrl}
+          nameEffect={gameState.ownUser?.nameEffect}
           ownLifePoints={gameState.ownLifePoints}
           opponentLifePoints={gameState.opponentLifePoints}
           opponentNickname={gameState.opponentUser?.nickname ?? "Oponente"}
@@ -2674,6 +2639,7 @@ function DuelPlayBoard() {
             {/* Playmats: vermelho para o oponente, azul para nós (cores do logo). */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
               <div className="absolute inset-x-0 top-0 h-1/2 bg-[radial-gradient(ellipse_at_50%_55%,rgba(190,40,60,0.30),transparent_65%),linear-gradient(180deg,#14080c_0%,#240d14_60%,#1c0a10_100%)]">
+                {cosmetics.opponentPlaymatUrl && <div className="absolute inset-0 rotate-180"><CosmeticArtImage url={cosmetics.opponentPlaymatUrl} className="opacity-80" /><div className="absolute inset-0" style={{ background: cosmetics.opponentPlaymatTint ?? undefined }} /></div>}
                 <ArcaneCircle className="text-rose-200/[0.12]" />
               </div>
               <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[radial-gradient(ellipse_at_50%_45%,rgba(40,120,230,0.30),transparent_65%),linear-gradient(180deg,#0a1426_0%,#0c1a33_40%,#080f1d_100%)]">
@@ -2790,6 +2756,8 @@ function DuelPlayBoard() {
                   lifePoints={gameState?.opponentLifePoints}
                   nickname={gameState?.opponentUser?.nickname}
                   image={gameState?.opponentUser?.image}
+                  frameUrl={gameState?.opponentUser?.frameUrl}
+                  nameEffect={gameState?.opponentUser?.nameEffect}
                 />
               </div>
             </div>
@@ -2850,6 +2818,8 @@ function DuelPlayBoard() {
                   lifePoints={gameState?.ownLifePoints}
                   nickname={gameState?.ownUser?.nickname}
                   image={gameState?.ownUser?.image}
+                  frameUrl={gameState?.ownUser?.frameUrl}
+                  nameEffect={gameState?.ownUser?.nameEffect}
                 />
               </div>
               <div className="ml-[calc(var(--z)*0.12)] flex flex-col gap-[calc(var(--z)*0.08)]">
