@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { expireDuel } from "@/lib/duel/expiry";
 import { isDuelGameState, type DuelGameState } from "@/lib/duel/game-state";
 import { getOcgDuelSessionSnapshot } from "@/lib/duel/ocgcore-session";
 import { settleMatch } from "@/lib/match-results";
@@ -179,6 +180,7 @@ export async function syncClock(matchId: string, bonus?: ClockBonus) {
  * Chamado a cada atualização da sala e antes de cada ação.
  */
 export async function checkClockTimeout(matchId: string) {
+  if (await expireDuel(matchId)) return { expired: true };
   const result = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
     const room = await tx.match.findUnique({

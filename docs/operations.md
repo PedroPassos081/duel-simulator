@@ -21,3 +21,11 @@ Não houve validação visual de todas as telas nem partida completa com dois na
 A interface e a API de venda de cartas foram excluídas: os dados disponíveis não relacionam cada cópia, sua raridade e sua origem de compra, podendo converter cartas recebidas gratuitamente em créditos. Os tipos e a tabela de venda ficam reservados, sem endpoint de venda disponível.
 
 As migrações preservam os preços e descontos existentes, sem reduzir preços automaticamente. Operações financeiras compostas usam uma transação compartilhada e bloqueio no PostgreSQL para evitar pagamentos duplicados e recompensas parcialmente entregues. O bloqueio financeiro é global; em grande volume ele limita a concorrência e deve ser monitorado.
+
+## Expiração de duelos
+
+O servidor Node verifica duelos a cada minuto e cancela salas após duas horas a partir de startedAt (ou createdAt enquanto não começaram). O cancelamento não define resultado, pontos ou prêmios. Duelo de chave expirado pausa o torneio para decisão administrativa. O limite de duração é independente do relógio de cada jogador.
+
+Para limpar salas vencidas manualmente, execute npm run duel:expire. O comando usa o banco configurado no .env. Em hospedagem serverless ou com suspensão do processo, programe esse comando em um agendador externo; o timer interno exige servidor persistente. A verificação ao acessar uma sala também aplica o limite.
+
+O cliente Prisma usa no máximo três conexões por processo por padrão; connection_limit definido na URL do banco tem precedência.

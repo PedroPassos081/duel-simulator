@@ -52,7 +52,7 @@ type RoomState = {
   clock?: ClockView | null;
   // W.O.: "absent" = não abriu a sala; "timeout" = zerou o tempo antes do duelo começar
   reason?: "absent" | "timeout";
-  status: "waiting" | "rps" | "choosing" | "active" | "finished" | "walkover";
+  status: "waiting" | "rps" | "choosing" | "active" | "finished" | "walkover" | "cancelled";
   // W.O.: alguém não abriu a sala a tempo; quem estava vence
   youWon?: boolean;
   meId: string;
@@ -1465,6 +1465,17 @@ function PreDuelGate({
     return () => window.clearInterval(timer);
   }, [room?.rpsDeadline]);
 
+  if (room?.status === "cancelled") {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-6">
+        <div className="max-w-md rounded-xl border border-edison-gold/30 bg-edison-panel p-6 text-center">
+          <h2 className="text-xl font-bold text-edison-gold">Duelo encerrado</h2>
+          <p className="mt-3 text-gray-300">A sala foi cancelada. Duelos abertos por duas horas são encerrados automaticamente, sem vencedor nem recompensas.</p>
+          <a href="/random" className="mt-5 inline-block rounded-lg bg-edison-gold px-5 py-2 font-bold text-black">Voltar às salas</a>
+        </div>
+      </div>
+    );
+  }
   if (room?.status === "walkover") {
     return (
       <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[#080b12]/95 p-6">

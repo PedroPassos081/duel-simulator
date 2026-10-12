@@ -2,10 +2,15 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { PrismaClient, type Prisma } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const databaseUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
+if (databaseUrl && !databaseUrl.searchParams.has("connection_limit")) {
+  databaseUrl.searchParams.set("connection_limit", "3");
+}
 
 const client =
   globalForPrisma.prisma ??
   new PrismaClient({
+    ...(databaseUrl ? { datasourceUrl: databaseUrl.toString() } : {}),
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
