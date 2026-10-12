@@ -1,4 +1,7 @@
 import { PrismaClient } from "@prisma/client";
+import { listingFor } from "../src/lib/card-prices";
+import { getShopPricing } from "../src/lib/site-settings";
+import { HIDDEN_CARD_NAMES, siteAddedAtForNewCard } from "../src/lib/site";
 
 const prisma = new PrismaClient();
 
@@ -35,6 +38,7 @@ type ApiCard = {
   level?: number;
   desc?: string;
   card_images?: { image_url?: string }[];
+  misc_info?: { tcg_date?: string }[]; // vem com &misc=yes
 };
 
 async function fetchCards(url: string, label: string): Promise<ApiCard[]> {
@@ -64,53 +68,18 @@ function mergeCards(...catalogs: ApiCard[][]) {
   return [...new Map(catalogs.flat().map((card) => [card.id, card])).values()];
 }
 
-// =========================================================================
-// 1. TABELA DE PREÇOS MANUAIS E LIMITES POR CARTA
-// As cartas aqui recebem os teus valores e travas exatas.
-// Se a carta NÃO estiver nesta tabela, o script usará o preço automático padrão.
-//
-// maxGold = quantas das PRIMEIRAS cópias podem ser compradas com gold (o resto só em crédito):
-//   2 → padrão, a 3ª cópia só em crédito
-//   1 → a partir da 2ª cópia só em crédito
-//   0 → carta só pode ser comprada com crédito
-// =========================================================================
-const tabelaDePrecosExcecoes: Record<
-  number,
-  { gold: number; cash: number; maxTotal?: number; maxGold?: number; maxCash?: number }
-> = {
-  // --- MONSTROS CLÁSSICOS / EFEITO ---
-  89631139: { gold: 2000, cash: 200, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Blue-Eyes White Dragon
-  46986414: { gold: 1500, cash: 150, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Dark Magician
-  70781052: { gold: 400, cash: 40, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Summoned Skull
-  52097679: { gold: 500, cash: 50, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Cyber Dragon
-  44519536: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Elemental HERO Stratos
-
-  // --- MONSTROS DO EXTRA DECK ---
-  70903359: { gold: 1200, cash: 120, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Stardust Dragon
-  25788011: { gold: 1000, cash: 100, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Number 39: Utopia
-  63646218: { gold: 800, cash: 80, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Elemental HERO Flame Wingman
-
-  // --- MÁGICAS ---
-  83764718: { gold: 1000, cash: 100, maxTotal: 1, maxGold: 1, maxCash: 1 }, // Monster Reborn (Limitada 1x)
-  242146: { gold: 400, cash: 40, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Mystical Space Typhoon
-  78651105: { gold: 300, cash: 30, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Polymerization
-  14087893: { gold: 500, cash: 50, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Book of Moon
-
-  // --- ARMADILHAS ---
-  41420027: { gold: 1200, cash: 120, maxTotal: 3, maxGold: 2, maxCash: 1 }, // Solemn Judgment
-  18045289: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Mirror Force
-  4734313: { gold: 600, cash: 60, maxTotal: 3, maxGold: 2, maxCash: 3 }, // Torrential Tribute
-};
+// Preços e limites da loja: por categoria e pelo NOME da carta, em src/lib/card-prices.ts
+// (Topo 5000/100, Fortes 2500/50, comum 7+/Fusão 800/16, 5–6/Mágica/Armadilha 400/8, 1–4 200/4).
 
 async function main() {
   console.log(`[SEED] Buscando catálogo TCG em Inglês (Nomes Oficiais)...`);
-  const urlEn = `https://db.ygoprodeck.com/api/v7/cardinfo.php?enddate=2006-12-31&format=tcg`;
+  const urlEn = `https://db.ygoprodeck.com/api/v7/cardinfo.php?enddate=2006-12-31&format=tcg&misc=yes`;
   const baseCardsEn = await fetchCards(urlEn, "catálogo TCG em inglês");
 
   console.log(`[SEED] Buscando pacote seletivo de teste dos Blackwing...`);
   const testIds = TEST_CARD_IDS.join(",");
   const testCardsEn = await fetchCards(
-    `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${testIds}`,
+    `https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${testIds}&misc=yes`,
     "pacote Blackwing em inglês"
   );
   const returnedTestIds = new Set(testCardsEn.map((card) => card.id));
@@ -143,6 +112,12 @@ async function main() {
   let importCount = 0;
   let customPriceCount = 0;
 
+  // Preços das categorias definidos no painel do Admin; cartas com preço manual mantêm o preço
+  const { tiers } = await getShopPricing();
+  const manualPrice = new Set(
+    (await prisma.shopListing.findMany({ where: { customPrice: true }, select: { cardId: true } })).map((l) => l.cardId)
+  );
+
   for (const apiCard of apiCardsEn) {
     const cardType = apiCard.type.toLowerCase();
 
@@ -165,55 +140,34 @@ async function main() {
       level: typeof apiCard.level === "number" ? apiCard.level : null,
       description: descriptionPt, // Efeito em PORTUGUÊS
       imageUrl: apiCard.card_images?.[0]?.image_url || null,
+      releaseDate: apiCard.misc_info?.[0]?.tcg_date ? new Date(apiCard.misc_info[0].tcg_date) : null,
     };
 
     // Cria/Insere a carta no banco
+    // siteAddedAt só na criação: depois do lançamento do site, marca quando a carta entrou no jogo
     await prisma.card.upsert({
       where: { id: cardData.id },
       update: cardData,
-      create: cardData,
+      create: { ...cardData, siteAddedAt: siteAddedAtForNewCard() },
     });
 
     // =========================================================================
     // 2. LÓGICA DE PRECIFICAÇÃO E LIMITES
     // =========================================================================
-    let priceGold = 200;
-    let priceCash = 20;
-    let maxTotal = 3;
-    let maxGold = 2; // padrão: a 3ª cópia é sempre em crédito
-    let maxCash = 3;
-
-    if (tabelaDePrecosExcecoes[cardData.id]) {
-      const config = tabelaDePrecosExcecoes[cardData.id];
-      priceGold = config.gold;
-      priceCash = config.cash;
-      maxTotal = config.maxTotal ?? 3;
-      maxGold = config.maxGold ?? 2;
-      maxCash = config.maxCash ?? 3;
-      customPriceCount++;
-    } else {
-      // Regra de precificação padrão por tipo e nível
-      const level = cardData.level || 0;
-      if (cardType.includes("fusion") || level >= 7) {
-        priceGold = 800;
-        priceCash = 80;
-      } else if (level === 5 || level === 6 || cardType.includes("spell") || cardType.includes("trap")) {
-        priceGold = 400;
-        priceCash = 40;
-      }
-    }
+    const { priceGold, priceCash, maxTotal, maxGold, maxCash } = listingFor(cardData, tiers);
+    if (priceGold >= 2500 || maxTotal < 3 || maxCash < 3) customPriceCount++;
 
     // Cria a listagem correspondente na loja
     await prisma.shopListing.upsert({
       where: { cardId: cardData.id },
       update: {
-        priceGold,
-        priceCash,
+        ...(manualPrice.has(cardData.id) ? {} : { priceGold, priceCash }),
         maxTotal,
         maxGold,
         maxCash,
         cashOnly: false,
-        active: true
+        // Registros vazios da YGOPRODeck (ex.: "???") não aparecem na loja
+        active: !HIDDEN_CARD_NAMES.includes(cardData.name)
       },
       create: {
         cardId: cardData.id,
@@ -223,7 +177,8 @@ async function main() {
         maxGold,
         maxCash,
         cashOnly: false,
-        active: true
+        // Registros vazios da YGOPRODeck (ex.: "???") não aparecem na loja
+        active: !HIDDEN_CARD_NAMES.includes(cardData.name)
       },
     });
 
@@ -232,7 +187,7 @@ async function main() {
 
   console.log(`\n=== LOJA ATUALIZADA COM SUCESSO ===`);
   console.log(`✓ Total de cartas TCG inseridas: ${importCount}`);
-  console.log(`✓ Cartas com preços/limites customizados: ${customPriceCount}\n`);
+  console.log(`✓ Cartas no Topo/Fortes ou com limite especial: ${customPriceCount}\n`);
 }
 
 main()

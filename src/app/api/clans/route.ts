@@ -93,7 +93,7 @@ export async function POST(req: Request) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
-  const parsed = actionSchema.safeParse(await req.json());
+  const parsed = actionSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." }, { status: 400 });
   }

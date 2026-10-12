@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: { params: { postId: string 
   }
   const userId = (session.user as { id: string }).id;
 
-  const parsed = commentSchema.safeParse(await req.json());
+  const parsed = commentSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Comentário inválido." }, { status: 400 });
   }

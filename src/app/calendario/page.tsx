@@ -4,7 +4,9 @@ import { EVENT_TYPES, eventTypeInfo, getEventsInMonth } from "@/lib/calendar";
 import { MONTH_NAMES, currentYearMonth, dayKey, dayKeyOf, formatDate, monthGrid } from "@/lib/dates";
 import { EyeOfHorus } from "@/components/theme/EgyptIcons";
 import { Cartouche, EgyptBand } from "@/components/theme/EgyptDecor";
+import { ArtBanner } from "@/components/theme/ArtBanner";
 import { GlassPanel } from "@/components/theme/PageBackdrop";
+import { ART } from "@/lib/card-art";
 
 export const dynamic = "force-dynamic";
 
@@ -41,14 +43,22 @@ export default async function CalendarPage({ searchParams }: { searchParams: { m
   return (
     <GlassPanel className="max-w-6xl">
       {/* CABEÇALHO */}
-      <div className="mb-6">
-        <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight text-zinc-100">
-          <EyeOfHorus className="h-7 w-11 text-amber-400" />
-          Calendário
-        </h1>
-        <p className="mt-1 text-sm text-zinc-400">Torneios e eventos que estão por vir.</p>
-        <EgyptBand className="mt-4" />
-      </div>
+      {/* Time Wizard: o mago que controla o tempo e marca a data dos torneios */}
+      <ArtBanner
+        art={ART.timeWizard}
+        eyebrow="Mago do Tempo"
+        title={
+          <span className="flex items-center gap-3">
+            <EyeOfHorus className="h-7 w-11 text-amber-300" />
+            Calendário
+          </span>
+        }
+        subtitle="Torneios e eventos que estão por vir."
+        tone="blue"
+        position="center 30%"
+        className="mb-4"
+      />
+      <EgyptBand className="mb-6" />
 
       {/* NAVEGAÇÃO DO MÊS */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

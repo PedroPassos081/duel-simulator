@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <!-- metade roxa (Dark Magician) e metade azul (Blue-Eyes) -->
+    <linearGradient id="split" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="0.45" stop-color="#c026d3"/>
+      <stop offset="0.55" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff7d6"/>
+      <stop offset="1" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="wing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f0f9ff"/>
+      <stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- anel dividido; centro transparente para a foto de perfil -->
+  <g filter="url(#glow)">
+    <circle cx="100" cy="100" r="86" stroke="url(#split)" stroke-width="6"/>
+    <circle cx="100" cy="100" r="79" stroke="#1e1b4b" stroke-opacity="0.85" stroke-width="1.4"/>
+    <circle cx="100" cy="100" r="92" stroke="url(#gold)" stroke-opacity="0.7" stroke-width="1"/>
+  </g>
+  <!-- lado do Dark Magician: chapéu pontudo e o cetro com a estrela -->
+  <g filter="url(#glow)" stroke="#2e1065" stroke-width="1.1" stroke-linejoin="round">
+    <path d="M30 70 L8 20 L46 58 Z" fill="#7c3aed"/>
+    <path d="M30 70 L46 58 L40 76 Z" fill="#a855f7"/>
+    <path d="M14 150 L44 112" stroke="url(#gold)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M12 152 l3 -8 l3 8 l8 0 l-6 5 l2 8 l-7 -5 l-7 5 l2 -8 l-6 -5 Z" fill="#f0abfc"/>
+  </g>
+  <!-- lado do Blue-Eyes: asa afiada -->
+  <g filter="url(#glow)" fill="url(#wing)" stroke="#1e3a8a" stroke-width="1.1" stroke-linejoin="round">
+    <path d="M176 100 L196 74 L186 76 L198 50 L184 56 L190 30 L172 48 L168 70 C172 78 174 88 176 100 Z"/>
+    <path d="M168 150 L196 150 L186 158 L198 168 L180 166 L176 182 L164 164 Z"/>
+  </g>
+  <!-- selo VS dourado no topo -->
+  <g filter="url(#glow)">
+    <circle cx="100" cy="12" r="11" fill="#0b0b12" stroke="url(#gold)" stroke-width="2"/>
+    <text x="100" y="16.5" text-anchor="middle" font-family="Georgia, serif" font-size="12" font-weight="bold" font-style="italic" fill="#fbbf24">VS</text>
+  </g>
+</svg>

@@ -63,3 +63,28 @@ export function SkyDragonIcon({ className = "w-6 h-6" }: IconProps) {
     </svg>
   );
 }
+
+/**
+ * Saquinho de couro antigo com o Olho de Hórus, soltando pó mágico.
+ * Ícone dos itens de evolução (Pó do Milênio).
+ */
+export function MillenniumPouch({ className = "w-6 h-6" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      {/* boca franzida do saco */}
+      <path d="M9 7.2 C9.4 5.2 10.6 4.4 12 5.1 C13.4 4.4 14.6 5.2 15 7.2" />
+      {/* corpo do saco */}
+      <path d="M8.2 9.3 C4.6 11.4 3.9 16.8 5.9 19.4 C7.6 21.5 16.4 21.5 18.1 19.4 C20.1 16.8 19.4 11.4 15.8 9.3" fill="currentColor" fillOpacity={0.12} />
+      {/* cordão amarrado e a ponta solta */}
+      <path d="M8 9.2 C10.5 10.4 13.5 10.4 16 9.2 M16 9.2 L17.6 11.6 M16 9.2 L18.3 10.1" />
+      {/* Olho de Hórus gravado */}
+      <path d="M9 15 C10.8 13.3 13.2 13.3 15 15 C13.2 16.6 10.8 16.6 9 15 Z" strokeWidth={1.3} />
+      <circle cx="12" cy="15" r="0.95" fill="currentColor" stroke="none" />
+      <path d="M11.2 16.4 L10.5 18.1" strokeWidth={1.2} />
+      {/* pó brilhando */}
+      <circle cx="18.6" cy="4.3" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="20.4" cy="7" r="0.55" fill="currentColor" stroke="none" />
+      <circle cx="5.6" cy="5" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}

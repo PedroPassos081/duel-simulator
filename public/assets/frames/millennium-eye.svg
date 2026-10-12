@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff7d6"/>
+      <stop offset="0.45" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c084fc"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- anel dourado duplo com o brilho roxo do Milênio; centro transparente para a foto -->
+  <g filter="url(#glow)">
+    <circle cx="100" cy="100" r="92" stroke="url(#violet)" stroke-opacity="0.7" stroke-width="2"/>
+    <circle cx="100" cy="100" r="86" stroke="url(#gold)" stroke-width="6"/>
+    <circle cx="100" cy="100" r="79" stroke="#78350f" stroke-opacity="0.85" stroke-width="1.5"/>
+  </g>
+  <!-- hieróglifos em volta (tracinhos do anel) -->
+  <circle cx="100" cy="100" r="86" stroke="#78350f" stroke-width="1.4" stroke-dasharray="2 9" opacity="0.8"/>
+  <!-- Pirâmide do Milênio no topo com o Olho de Hórus -->
+  <g filter="url(#glow)" stroke="#78350f" stroke-width="1.3" stroke-linejoin="round">
+    <path d="M100 0 L124 34 L76 34 Z" fill="url(#gold)"/>
+    <path d="M86 23 Q100 14 114 23 Q100 31 86 23 Z" fill="#fff7d6"/>
+    <circle cx="100" cy="23" r="3.6" fill="url(#violet)"/>
+    <path d="M100 27 L97 33 M104 26 Q108 30 106 33" stroke-width="1.1"/>
+  </g>
+  <!-- asas de escaravelho nas laterais -->
+  <g filter="url(#glow)" fill="url(#gold)" stroke="#78350f" stroke-width="1.1" stroke-linejoin="round">
+    <path d="M14 100 C4 88 6 70 18 60 C18 72 24 80 32 84 C24 88 22 94 24 100 C22 102 18 102 14 100 Z"/>
+    <path d="M186 100 C196 88 194 70 182 60 C182 72 176 80 168 84 C176 88 178 94 176 100 C178 102 182 102 186 100 Z"/>
+  </g>
+  <!-- joia roxa embaixo -->
+  <g filter="url(#glow)">
+    <path d="M100 176 L110 188 L100 198 L90 188 Z" fill="url(#violet)" stroke="#3b0764" stroke-width="1.2"/>
+    <path d="M100 178 L106 188 L100 184 Z" fill="#ffffff" opacity="0.6"/>
+  </g>
+</svg>

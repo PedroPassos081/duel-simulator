@@ -86,6 +86,27 @@ body {
   animation: nick-shimmer 3s linear infinite;
 }
 
+/* Faraó: ouro com brilho roxo do Olho do Milênio (prêmio do Passe de Batalha) */
+.nick-farao {
+  background-image: linear-gradient(90deg, #a855f7, #fbbf24, #fff7d6, #fbbf24, #a855f7);
+  filter: drop-shadow(0 0 5px rgba(168, 85, 247, 0.6)) drop-shadow(0 0 2px rgba(251, 191, 36, 0.7));
+  animation: nick-shimmer 2.4s linear infinite;
+}
+
+/* Dark Magician: roxo e magenta com brilho de magia negra (Passe de Batalha) */
+.nick-darkmagician {
+  background-image: linear-gradient(90deg, #6d28d9, #c026d3, #f0abfc, #c026d3, #6d28d9);
+  filter: drop-shadow(0 0 5px rgba(192, 38, 211, 0.65));
+  animation: nick-shimmer 2.6s linear infinite;
+}
+
+/* Blue-Eyes: azul-gelo e branco com o brilho do dragão (Passe de Batalha) */
+.nick-blueeyes {
+  background-image: linear-gradient(90deg, #1d4ed8, #38bdf8, #f0f9ff, #38bdf8, #1d4ed8);
+  filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.7));
+  animation: nick-shimmer 2.6s linear infinite;
+}
+
 .nick-rainbow {
   background-image: linear-gradient(90deg, #ff5f6d, #ffc371, #f9f871, #47e6a1, #4fa3ff, #b86bff, #ff5f6d);
   filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.35));
@@ -146,4 +167,92 @@ body {
   .nick-effect {
     animation: none !important;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-banner-drift {
+    animation: none !important;
+  }
+}
+
+
+/* ===================== CARTAS FOIL (raridades e bordas) =====================
+   Camadas sobre a imagem da carta. Componente: src/components/FoilCard.tsx.
+   Raridades e itens: src/lib/card-finish.ts */
+
+.foil-wrap { perspective: 900px; }
+.foil-card {
+  --mx: 50%; --my: 50%; --rx: 0deg; --ry: 0deg;
+  position: relative; aspect-ratio: 421 / 614; border-radius: 4.5% / 3.1%;
+  overflow: hidden; transform: rotateX(var(--rx)) rotateY(var(--ry));
+  transition: transform .25s ease-out, box-shadow .25s;
+  will-change: transform;
+}
+.foil-card.is-active { transition: transform .05s linear, box-shadow .25s; }
+.foil-card > img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
+.foil-holo, .foil-art, .foil-glare, .foil-sparkle, .foil-border { position: absolute; inset: 0; pointer-events: none; }
+
+/* reflexo que segue o mouse */
+.foil-glare {
+  background: radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,.55), rgba(255,255,255,0) 45%);
+  mix-blend-mode: overlay; opacity: 0; transition: opacity .3s;
+}
+.foil-card.is-active .foil-glare { opacity: .8; }
+
+/* RARA e ULTRA: reflexo dourado na carta toda */
+.foil-rara { box-shadow: 0 0 0 1.5px rgba(252,211,77,.8), 0 0 20px rgba(245,158,11,.4); }
+.foil-rara .foil-holo, .foil-ultra .foil-holo {
+  background:
+    linear-gradient(120deg, transparent 20%, rgba(255,215,120,.85) 38%, rgba(255,255,230,.95) 45%, rgba(255,190,60,.8) 52%, transparent 70%),
+    repeating-linear-gradient(0deg, rgba(255,210,100,.12) 0 2px, transparent 2px 5px);
+  background-size: 250% 250%, auto; background-position: var(--mx) var(--my), 0 0;
+  mix-blend-mode: color-dodge; opacity: .45; animation: foil-drift 5s ease-in-out infinite alternate;
+}
+
+/* ULTRA: além do dourado, holográfico colorido na janela da arte */
+.foil-ultra { box-shadow: 0 0 0 1.5px rgba(125,211,252,.8), 0 0 22px rgba(56,189,248,.45); }
+.foil-ultra .foil-art {
+  inset: 18.3% 12% 27.5% 12%;
+  background: repeating-linear-gradient(115deg, #ff005580 0%, #ffd00080 6%, #00ff8a80 12%, #00c3ff80 18%, #b300ff80 24%, #ff005580 30%);
+  background-size: 300% 300%; background-position: var(--mx) var(--my);
+  mix-blend-mode: color-dodge; opacity: .85; animation: foil-drift 6s ease-in-out infinite alternate;
+}
+
+/* SECRETA: arco-íris forte + partículas cintilantes + brilho pulsante */
+.foil-secreta { animation: secreta-glow 2.4s ease-in-out infinite; }
+.foil-secreta .foil-holo {
+  background:
+    repeating-linear-gradient(45deg, rgba(255,0,80,.7) 0 3px, rgba(255,200,0,.7) 3px 6px, rgba(0,255,140,.7) 6px 9px, rgba(0,180,255,.7) 9px 12px, rgba(190,0,255,.7) 12px 15px),
+    radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,1), transparent 40%);
+  background-size: 200% 200%, 100% 100%; background-position: var(--mx) var(--my), 0 0;
+  mix-blend-mode: color-dodge; opacity: .8; animation: foil-drift 3s ease-in-out infinite alternate;
+}
+.foil-sparkle {
+  background-image: radial-gradient(circle, #fff 0 1px, transparent 1.5px), radial-gradient(circle, #fff 0 .8px, transparent 1.3px);
+  background-size: 23px 29px, 37px 31px; background-position: 0 0, 11px 17px;
+  mix-blend-mode: screen; animation: twinkle 1.6s ease-in-out infinite alternate;
+}
+@keyframes twinkle { from { opacity: .15; } to { opacity: .9; } }
+@keyframes secreta-glow {
+  0%, 100% { box-shadow: 0 0 0 1.5px rgba(240,171,252,.9), 0 0 22px rgba(217,70,239,.5); }
+  50% { box-shadow: 0 0 0 2px rgba(165,243,252,.95), 0 0 36px rgba(56,189,248,.65); }
+}
+
+/* BORDAS metálicas com brilho percorrendo a moldura */
+.foil-border {
+  padding: 3.2%; border-radius: inherit; background-size: 300% 300%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: border-shine 3.5s linear infinite;
+}
+.border-ouro .foil-border { background-image: linear-gradient(135deg, #6b4a0e, #f9e08a, #b8860b, #fff6c4, #8a6a1a, #f5d36b, #6b4a0e); }
+.border-prata .foil-border { background-image: linear-gradient(135deg, #3f4652, #f3f4f6, #9ca3af, #ffffff, #4b5563, #e5e7eb, #3f4652); }
+@keyframes border-shine { to { background-position: 300% 300%; } }
+
+@keyframes foil-drift { from { background-position: 0% 0%, 0 0; } to { background-position: 100% 100%, 0 0; } }
+.foil-card.is-active .foil-holo, .foil-card.is-active .foil-art { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .foil-card { transform: none !important; animation: none !important; }
+  .foil-holo, .foil-art, .foil-sparkle, .foil-border { animation: none !important; }
 }

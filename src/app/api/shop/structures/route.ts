@@ -6,8 +6,8 @@ import { listStructureDecks, purchaseStructureDeck } from "@/lib/structure-decks
 
 const purchaseSchema = z.object({
   structureDeckId: z.string().min(1),
-  edition: z.enum(["base", "premium"]),
-  currency: z.enum(["cash", "gold", "money"]),
+  edition: z.enum(["base", "premium", "upgrade"]),
+  currency: z.enum(["coins", "money"]),
 });
 
 async function getUserId() {
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
-  const parsed = purchaseSchema.safeParse(await req.json());
+  const parsed = purchaseSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
 
   try {

@@ -1,3 +1,4 @@
+import { withRoomLock } from "@/lib/duel/room-lock";
 import { NextResponse } from "next/server";
 import { randomInt } from "node:crypto";
 import { z } from "zod";
@@ -5,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { DuelPlayerState } from "@/lib/duel/game-state";
 import { createOcgDuelSession } from "@/lib/duel/ocgcore-session";
+import { checkClockTimeout, syncClock } from "@/lib/duel/clock";
 
 const schema = z.object({ goFirst: z.boolean() });
 
@@ -21,16 +23,24 @@ export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  return withRoomLock(params.id, async () => {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
-  const parsed = schema.safeParse(await request.json());
+  const parsed = schema.safeParse(await request.json().catch(() => null).catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Ordem inválida." }, { status: 400 });
   }
 
+  const participant = await prisma.matchPlayer.findUnique({
+    where: { matchId_userId: { matchId: params.id, userId } }, select: { id: true },
+  });
+  if (!participant) return NextResponse.json({ error: "Sala não encontrada." }, { status: 404 });
+  if (await checkClockTimeout(params.id)) {
+    return NextResponse.json({ error: "O tempo acabou." }, { status: 409 });
+  }
   const room = await prisma.match.findFirst({
     where: { id: params.id, status: "choosing", rpsWinnerId: userId },
     include: { players: true },
@@ -117,5 +127,9 @@ export async function POST(
     console.error(`Falha ao iniciar OCGCore na sala ${room.id}:`, error);
   }
 
+  // O duelo começou: o tempo passa a correr para quem joga primeiro
+  await syncClock(room.id).catch((err) => console.error("[clock]", room.id, err));
   return NextResponse.json({ status: "active", firstPlayerId, ocgCore });
+
+  });
 }

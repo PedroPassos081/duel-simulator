@@ -10,7 +10,10 @@ import {
   Menu,
   Newspaper,
   Shield,
+  ShieldAlert,
   Store,
+  Swords,
+  Target,
   Trophy,
   X,
   type LucideIcon,
@@ -20,11 +23,17 @@ const NAV_LINKS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/jornal", label: "Jornal", icon: Newspaper },
   { href: "/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/random", label: "Random", icon: Dices },
+  { href: "/torneios", label: "Torneios", icon: Swords },
+  { href: "/desafios", label: "Desafios", icon: Target },
   { href: "/ranking", label: "Ranking", icon: Trophy },
   { href: "/cla", label: "Clã", icon: Shield },
   { href: "/deck-builder", label: "Deck", icon: Layers },
   { href: "/shop", label: "Loja", icon: Store },
 ];
+
+// Painel do Admin: só aparece para contas com cargo "admin"
+const ADMIN_LINK = { href: "/admin", label: "Admin", icon: ShieldAlert };
+const navLinks = (isAdmin: boolean) => (isAdmin ? [...NAV_LINKS, ADMIN_LINK] : NAV_LINKS);
 
 function useIsActive() {
   const pathname = usePathname();
@@ -45,11 +54,11 @@ function ClanBadge({ count }: { count: number }) {
 }
 
 /** Links do header em telas largas. A seção atual ganha um losango dourado em cima do filete do header. */
-export function DesktopNavLinks({ clanApprovals }: { clanApprovals: number }) {
+export function DesktopNavLinks({ clanApprovals, isAdmin = false }: { clanApprovals: number; isAdmin?: boolean }) {
   const isActive = useIsActive();
   return (
     <nav className="hidden items-center gap-6 xl:flex">
-      {NAV_LINKS.map(({ href, label }) => {
+      {navLinks(isAdmin).map(({ href, label }) => {
         const active = isActive(href);
         return (
           <Link
@@ -85,7 +94,15 @@ export function DesktopNavLinks({ clanApprovals }: { clanApprovals: number }) {
  * Menu recolhível para telas estreitas: o botão fica no header e a lista abre logo abaixo dele.
  * `footer` aparece depois dos links (o Navbar põe o "Sair" ali no celular).
  */
-export function MobileNavMenu({ clanApprovals, footer }: { clanApprovals: number; footer?: React.ReactNode }) {
+export function MobileNavMenu({
+  clanApprovals,
+  footer,
+  isAdmin = false,
+}: {
+  clanApprovals: number;
+  footer?: React.ReactNode;
+  isAdmin?: boolean;
+}) {
   const isActive = useIsActive();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
@@ -108,7 +125,7 @@ export function MobileNavMenu({ clanApprovals, footer }: { clanApprovals: number
           <div aria-hidden onClick={close} className="absolute inset-x-0 top-full h-[calc(100dvh-4rem)] bg-black/50" />
           <nav className="absolute inset-x-0 top-full border-b border-amber-500/20 bg-black shadow-2xl shadow-black/70">
             <div className="mx-auto grid max-w-7xl grid-cols-2 gap-1 p-3 sm:grid-cols-4">
-              {NAV_LINKS.map(({ href, label, icon: Icon }) => {
+              {navLinks(isAdmin).map(({ href, label, icon: Icon }) => {
                 const active = isActive(href);
                 return (
                   <Link

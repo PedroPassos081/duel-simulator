@@ -11,7 +11,7 @@ export async function PUT(req: Request) {
   }
   const userId = (session.user as { id: string }).id;
 
-  const parsed = equipCosmeticSchema.safeParse(await req.json());
+  const parsed = equipCosmeticSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success || !isCosmeticType(parsed.data.type)) {
     return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
   }

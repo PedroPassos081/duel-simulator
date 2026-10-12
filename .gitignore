@@ -5,3 +5,6 @@ dev.db-journal
 .env
 .env.local
 resources/ocgcore/
+
+# TypeScript incremental cache
+*.tsbuildinfo

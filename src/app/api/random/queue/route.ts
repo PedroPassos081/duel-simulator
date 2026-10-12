@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
-  const parsed = joinSchema.safeParse(await req.json());
+  const parsed = joinSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Sala inválida." }, { status: 400 });
   }

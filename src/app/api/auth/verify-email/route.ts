@@ -7,7 +7,7 @@ import { verificationSchema } from "@/lib/validation";
 const MAX_ATTEMPTS = 5;
 
 export async function POST(req: Request) {
-  const parsed = verificationSchema.safeParse(await req.json());
+  const parsed = verificationSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten() },

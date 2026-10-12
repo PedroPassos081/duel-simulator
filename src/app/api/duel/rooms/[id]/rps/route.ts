@@ -1,7 +1,9 @@
+import { withRoomLock } from "@/lib/duel/room-lock";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { checkClockTimeout, syncClock } from "@/lib/duel/clock";
 
 const schema = z.object({
   choice: z.enum(["rock", "paper", "scissors"]),
@@ -17,17 +19,26 @@ export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  return withRoomLock(params.id, async () => {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
-  const parsed = schema.safeParse(await request.json());
+  const parsed = schema.safeParse(await request.json().catch(() => null).catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Escolha inválida." }, { status: 400 });
   }
 
+  const participant = await prisma.matchPlayer.findUnique({
+    where: { matchId_userId: { matchId: params.id, userId } }, select: { id: true },
+  });
+  if (!participant) return NextResponse.json({ error: "Sala não encontrada." }, { status: 404 });
+  if (await checkClockTimeout(params.id)) {
+    return NextResponse.json({ error: "O tempo acabou." }, { status: 409 });
+  }
   const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM "Match" WHERE id = ${params.id} FOR UPDATE`;
     const room = await tx.match.findFirst({
       where: { id: params.id, status: "rps", players: { some: { userId } } },
       include: { players: true },
@@ -78,6 +89,7 @@ export async function POST(
         status: "choosing",
         currentPhase: "choosing_order",
         rpsWinnerId: winner.userId,
+        rpsDeadline: null,
       },
     });
     return { status: "choosing", winnerId: winner.userId };
@@ -89,5 +101,9 @@ export async function POST(
       { status: 409 }
     );
   }
+  // Quem já escolheu para de gastar tempo; no empate, volta a correr para os dois
+  await syncClock(params.id).catch((err) => console.error("[clock]", params.id, err));
   return NextResponse.json(result);
+
+  });
 }

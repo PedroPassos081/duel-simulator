@@ -9,8 +9,12 @@ export interface Card {
   level: number | null;
   description: string;
   imageUrl: string | null;
-  banlistEntries?: { status: string }[];
+  banlistEntries?: { format?: string; status: string }[]; // status nas salas (slifer, obelisk)
+  rooms?: string[]; // salas em que a carta existe (pool); ausente = todas
   ownedQuantity?: number;
+  maxTotal?: number; // limite de cópias da loja (vem de /api/cards)
+  // Melhor versão que o jogador tem (Rara, Secreta... + borda), vinda de /api/cards
+  bestVariant?: { finish: import("@/lib/card-finish").Finish; border: import("@/lib/card-finish").Border };
 }
 
 export type DeckSection = "main" | "extra" | "side";

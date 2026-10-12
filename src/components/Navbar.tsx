@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
-import { CircleDollarSign, Gem, LogOut } from "lucide-react";
+import { LogOut, Mail } from "lucide-react";
+import { GoldIcon, CreditIcon } from "@/components/theme/CurrencyIcons";
 import { auth, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { CREDIT_LABEL_PLURAL } from "@/lib/shop-rules";
@@ -9,6 +10,11 @@ import { toAvatarProps, toPlayerNameProps, userAvatarSelect } from "@/lib/avatar
 import { PlayerName } from "@/components/PlayerName";
 import { DesktopNavLinks, MobileNavMenu } from "@/components/NavLinks";
 import { countPendingApprovals } from "@/lib/clans/service";
+import { isAdmin } from "@/lib/admin";
+import { getPendingWarnings } from "@/lib/punishments";
+import { WarningsBanner } from "@/components/WarningsBanner";
+import { countUnreadMessages } from "@/lib/messages";
+import { TournamentMatchNotice } from "@/components/TournamentMatchNotice";
 
 export async function Navbar() {
   const session = await auth();
@@ -20,20 +26,28 @@ export async function Navbar() {
   const currentUser = userId
     ? await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, ...userAvatarSelect },
+        select: { id: true, role: true, vipUntil: true, ...userAvatarSelect },
       })
     : null;
 
+  // Consultas independentes em paralelo (a navbar roda em toda página)
+  const [existingWallet, clanApprovals, warnings, unreadMessages] = currentUser
+    ? await Promise.all([
+        prisma.wallet.findUnique({ where: { userId: currentUser.id } }),
+        // Pedidos do clã esperando a resposta deste jogador (líder/vice)
+        countPendingApprovals(currentUser.id),
+        // Advertências do Admin que o jogador ainda não confirmou
+        getPendingWarnings(currentUser.id),
+        // Mensagens privadas não lidas (número no envelope)
+        countUnreadMessages(currentUser.id),
+      ])
+    : ([null, 0, [], 0] as [null, number, never[], number]);
+  // Só escreve no banco quando a carteira ainda não existe
   const wallet = currentUser
-    ? await prisma.wallet.upsert({
-        where: { userId: currentUser.id },
-        update: {},
-        create: { userId: currentUser.id },
-      })
+    ? existingWallet ??
+      (await prisma.wallet.upsert({ where: { userId: currentUser.id }, update: {}, create: { userId: currentUser.id } }))
     : null;
-
-  // Pedidos do clã esperando a resposta deste jogador (líder/vice)
-  const clanApprovals = currentUser ? await countPendingApprovals(currentUser.id) : 0;
+  const admin = isAdmin(currentUser?.role);
 
   async function logout() {
     "use server";
@@ -41,7 +55,7 @@ export async function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-40 bg-black/75 backdrop-blur-md">
+    <header className="sticky top-0 z-40 bg-black/90">
       {/* filete dourado na base, o mesmo traço do topo do GlassPanel */}
       <span
         aria-hidden
@@ -50,6 +64,7 @@ export async function Navbar() {
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3 xl:gap-6">
         <MobileNavMenu
           clanApprovals={clanApprovals}
+          isAdmin={admin}
           // No celular não cabe no header, então o "Sair" vai para dentro do menu
           footer={
             currentUser && (
@@ -79,7 +94,7 @@ export async function Navbar() {
         </Link>
 
         <span aria-hidden className="hidden h-7 w-px bg-gradient-to-b from-transparent via-amber-500/50 to-transparent xl:block" />
-        <DesktopNavLinks clanApprovals={clanApprovals} />
+        <DesktopNavLinks clanApprovals={clanApprovals} isAdmin={admin} />
 
         <div className="ml-auto flex shrink-0 items-center gap-2 text-sm sm:gap-3">
           {session?.user && currentUser ? (
@@ -88,7 +103,7 @@ export async function Navbar() {
                 <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-black/40 px-2 py-1.5 sm:gap-3 sm:px-3">
                   {/* GOLD */}
                   <span className="flex items-center gap-1.5 font-bold text-amber-400">
-                    <CircleDollarSign className="w-4 h-4 text-amber-400" />
+                    <GoldIcon className="w-4 h-4 text-amber-400" />
                     <span>{wallet.gold}</span>
                   </span>
 
@@ -96,11 +111,25 @@ export async function Navbar() {
 
                   {/* CRÉDITO */}
                   <span className="flex items-center gap-1.5 font-bold text-purple-400" title={CREDIT_LABEL_PLURAL}>
-                    <Gem className="w-4 h-4 text-purple-400" />
+                    <CreditIcon className="w-4 h-4 text-purple-400" />
                     <span>{wallet.cash}</span>
                   </span>
                 </div>
               )}
+
+              <Link
+                href="/mensagens"
+                title={unreadMessages ? `${unreadMessages} mensagem(ns) nova(s)` : "Mensagens"}
+                aria-label="Mensagens"
+                className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition-colors hover:border-amber-500/40 hover:text-amber-200"
+              >
+                <Mail className="h-4 w-4" />
+                {unreadMessages > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 min-w-[18px] rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-[18px] text-white">
+                    {unreadMessages > 99 ? "99+" : unreadMessages}
+                  </span>
+                )}
+              </Link>
 
               <Link
                 href="/account"
@@ -109,8 +138,16 @@ export async function Navbar() {
               >
                 <Avatar {...toAvatarProps(currentUser)} size={30} />
                 <span className="hidden sm:inline">
-                  <PlayerName {...toPlayerNameProps(currentUser)} className="font-semibold" />
+                  <PlayerName {...toPlayerNameProps(currentUser)} link={false} className="font-semibold" />
                 </span>
+                {currentUser.vipUntil && currentUser.vipUntil > new Date() && (
+                  <span
+                    className="rounded border border-amber-300/70 bg-gradient-to-b from-amber-300 to-amber-500 px-1 text-[10px] font-black leading-4 text-black"
+                    title={`VIP até ${currentUser.vipUntil.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} · +30% de gold nos duelos`}
+                  >
+                    VIP
+                  </span>
+                )}
               </Link>
 
               <form action={logout} className="hidden sm:block">
@@ -141,6 +178,9 @@ export async function Navbar() {
           )}
         </div>
       </div>
+      <WarningsBanner warnings={warnings} />
+      {/* Duelo de torneio em chaves: aviso com contagem e o botão para entrar */}
+      {currentUser && <TournamentMatchNotice />}
     </header>
   );
 }

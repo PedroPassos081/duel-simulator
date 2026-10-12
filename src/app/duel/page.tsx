@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import type { Card, DeckSection } from "@/types/card";
+import { ART, cardArt } from "@/lib/card-art";
 
 type EquippedDeck = {
   id: string;
@@ -78,6 +79,9 @@ export default function DuelPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 py-6">
       <section className="relative overflow-hidden rounded-3xl border border-edison-border bg-edison-panel px-6 py-10 text-center shadow-2xl sm:px-12">
+        {/* Dark Magician contra Red-Eyes: o duelo clássico dos dois lados da arena */}
+        <img src={cardArt(ART.darkMagician)} alt="" aria-hidden className="pointer-events-none absolute inset-y-0 left-0 h-full w-1/2 object-cover object-[center_20%] opacity-40 [mask-image:linear-gradient(to_right,black,transparent)]" />
+        <img src={cardArt(ART.redEyes)} alt="" aria-hidden className="pointer-events-none absolute inset-y-0 right-0 h-full w-1/2 object-cover object-[center_20%] opacity-40 [mask-image:linear-gradient(to_left,black,transparent)]" />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(234,179,8,0.15),transparent_45%)]" />
         <div className="relative mx-auto max-w-2xl">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-edison-gold/30 bg-edison-gold/10">

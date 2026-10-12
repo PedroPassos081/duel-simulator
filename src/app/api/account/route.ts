@@ -32,11 +32,18 @@ export async function GET() {
 
   const { passwordHash, cosmetics, equippedCosmetics, ...profile } = user;
 
+  // Aparência do deck equipado (o duelo usa essa; vazio = a da conta)
+  const equippedDeck = await prisma.deck.findFirst({
+    where: { userId, isEquipped: true },
+    select: { sleeveId: true, playmatId: true },
+  });
+
   return NextResponse.json({
     ...profile,
     hasPassword: Boolean(passwordHash),
     cosmetics: cosmetics.map((c) => ({ ...c.cosmetic, source: c.source, acquiredAt: c.acquiredAt })),
     equipped: Object.fromEntries(equippedCosmetics.map((e) => [e.type, e.cosmeticId])),
+    deckStyle: { sleeve: equippedDeck?.sleeveId ?? null, playmat: equippedDeck?.playmatId ?? null },
   });
 }
 
@@ -47,7 +54,7 @@ export async function PATCH(req: Request) {
   }
   const userId = (session.user as { id: string }).id;
 
-  const parsed = profileUpdateSchema.safeParse(await req.json());
+  const parsed = profileUpdateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     const message = parsed.error.issues[0]?.message ?? "Dados inválidos.";
     return NextResponse.json({ error: message }, { status: 400 });

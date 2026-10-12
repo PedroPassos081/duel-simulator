@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_BULK_SALE, MAX_SALE_PERCENT, MIN_SALE_PERCENT } from "@/lib/card-sale-rules";
 
 export const loginSchema = z.object({
   identifier: z.string().trim().min(3).max(100),
@@ -65,6 +66,38 @@ export const resendVerificationSchema = z.object({
 export const purchaseSchema = z.object({
   cardId: z.number().int().positive(),
   currency: z.enum(["gold", "cash"]),
+  // Raridade da cópia comprada (preço dobra a cada nível)
+  finish: z.enum(["normal", "rara", "ultra", "secreta"]).default("normal"),
+  // Borda da cópia (preço próprio: prata 2x, dourada 3x o preço base)
+  border: z.enum(["none", "prata", "ouro"]).default("none"),
+});
+
+// Compra em massa: várias cópias (cada uma com raridade/borda), todas na mesma moeda
+export const bulkPurchaseSchema = z.object({
+  currency: z.enum(["gold", "cash"]),
+  items: z
+    .array(
+      z.object({
+        cardId: z.number().int().positive(),
+        finish: z.enum(["normal", "rara", "ultra", "secreta"]).default("normal"),
+        border: z.enum(["none", "prata", "ouro"]).default("none"),
+      })
+    )
+    .min(1)
+    .max(MAX_BULK_SALE),
+});
+
+// Venda de cartas: quantas cópias de cada carta
+export const saleSchema = z.object({
+  items: z
+    .array(z.object({ cardId: z.number().int().positive(), quantity: z.number().int().min(1).max(MAX_BULK_SALE) }))
+    .min(1)
+    .max(MAX_BULK_SALE),
+});
+
+// Painel do Admin: % do preço da loja paga na venda de cartas
+export const cardSalePercentSchema = z.object({
+  cardSalePercent: z.number().int().min(MIN_SALE_PERCENT).max(MAX_SALE_PERCENT),
 });
 
 export const deckSaveSchema = z.object({
@@ -77,4 +110,7 @@ export const deckSaveSchema = z.object({
       quantity: z.number().int().min(1).max(3),
     })
   ),
+  // Aparência do deck no duelo (null = padrão da conta; ausente = não muda)
+  sleeveId: z.string().min(1).nullable().optional(),
+  playmatId: z.string().min(1).nullable().optional(),
 });

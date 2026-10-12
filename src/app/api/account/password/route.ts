@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   }
   const userId = (session.user as { id: string }).id;
 
-  const parsed = passwordChangeSchema.safeParse(await req.json());
+  const parsed = passwordChangeSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     const message = parsed.error.issues[0]?.message ?? "Dados inválidos.";
     return NextResponse.json({ error: message }, { status: 400 });
