@@ -1377,11 +1377,17 @@ function PreDuelGate({
   const [secondsLeft, setSecondsLeft] = useState(15);
   const [syncError, setSyncError] = useState(false);
   const clockLeft = useDuelClock(room?.clock);
+  const onGameStateRef = useRef(onGameState);
+
+  useEffect(() => {
+    onGameStateRef.current = onGameState;
+  }, [onGameState]);
 
   useEffect(() => {
     let active = true;
     let inFlight = false;
     let lastJson = "";
+    const controller = new AbortController();
     async function refresh() {
       // Não empilha pedidos se o servidor está devagar; aba escondida não precisa de poll rápido
       if (inFlight) return;
@@ -1398,7 +1404,8 @@ function PreDuelGate({
       const response = await fetch(
         `/api/duel/rooms/${roomId}?time=${Date.now()}`,
         {
-        cache: "no-store",
+          cache: "no-store",
+          signal: controller.signal,
           headers: { "Cache-Control": "no-cache" },
         }
       );
@@ -1415,7 +1422,7 @@ function PreDuelGate({
         if (previousStatus.current === "waiting" && (nextRoom.status === "rps" || nextRoom.status === "choosing")) alertMatchFound();
         previousStatus.current = nextRoom.status;
         setRoom(nextRoom);
-        onGameState(nextRoom.game);
+        onGameStateRef.current(nextRoom.game);
         setSyncError(false);
       } else if (active) {
         setSyncError(true);
@@ -1425,9 +1432,10 @@ function PreDuelGate({
     const timer = window.setInterval(refresh, 700);
     return () => {
       active = false;
+      controller.abort();
       window.clearInterval(timer);
     };
-  }, [roomId, onGameState]);
+  }, [roomId]);
 
   useEffect(() => {
     function updateCountdown() {
@@ -1506,14 +1514,21 @@ function PreDuelGate({
 
   async function cancelSearch() {
     setCancelling(true);
-    const response = await fetch(`/api/duel/rooms/${roomId}`, {
-      method: "DELETE",
-    });
-    if (response.ok) {
-      window.location.href = "/duel";
-      return;
+    try {
+      const response = await fetch(`/api/duel/rooms/${roomId}`, {
+        method: "DELETE",
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) {
+        window.location.href = "/duel";
+        return;
+      }
+      setSyncError(true);
+    } catch {
+      setSyncError(true);
+    } finally {
+      setCancelling(false);
     }
-    setCancelling(false);
   }
 
   return (
