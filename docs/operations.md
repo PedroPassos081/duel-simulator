@@ -33,3 +33,7 @@ O cliente Prisma usa no máximo três conexões por processo por padrão; connec
 ## Testes temporários na Slifer
 
 A configuração SiteSetting slifer_allow_unreleased_for_testing=true permite usar cartas ainda não lançadas na validação da fila Slifer. Para encerrar a exceção, altere o valor para false. A exceção não libera cartas na loja e não se aplica a torneios nem às outras salas. Tamanho do deck, limite geral de três cópias e posse das cartas continuam sendo validados. A configuração anterior da banlist temporariamente suspensa foi preservada em temporary_banlist_backup:slifer.
+
+## Servidor local e CSS
+
+O comando npm run dev usa a porta 3000 explicitamente. Se ela já estiver ocupada, o segundo servidor não inicia em outra porta. O desenvolvimento gera arquivos em .next-dev; a compilação e a execução de produção usam .next. Isso evita que builds sobrescrevam os arquivos CSS do servidor de desenvolvimento. Mantenha apenas um servidor por pasta.
