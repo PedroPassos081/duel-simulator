@@ -13,7 +13,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   }
   const userId = (session.user as { id: string }).id;
 
-  const parsed = reactionSchema.safeParse(await req.json());
+  const parsed = reactionSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Reação inválida." }, { status: 400 });
   }

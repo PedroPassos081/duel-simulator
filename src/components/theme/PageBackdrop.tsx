@@ -22,7 +22,7 @@ export function PageBackdrop() {
 export function GlassPanel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={`relative mx-auto rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4 shadow-2xl shadow-black/70 backdrop-blur-md sm:my-4 sm:p-8 ${className}`}
+      className={`relative mx-auto rounded-2xl border border-amber-500/20 bg-zinc-950/85 p-4 shadow-2xl shadow-black/70 sm:my-4 sm:p-8 ${className}`}
     >
       {/* filete dourado no topo, o mesmo traço das linhas da arte */}
       <span

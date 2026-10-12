@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Só o Admin pode publicar no jornal." }, { status: 403 });
   }
 
-  const parsed = postSchema.safeParse(await req.json());
+  const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." }, { status: 400 });
   }

@@ -37,5 +37,7 @@ export function toPlayerNameProps(user: UserAvatarData) {
   return {
     name: user.username ?? user.name,
     effect: equipped(user, "name_style")?.effect ?? null,
+    // O nome vira link para o perfil público (/perfil/@nick)
+    profile: user.username ?? null,
   };
 }

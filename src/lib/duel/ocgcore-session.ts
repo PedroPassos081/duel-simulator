@@ -9,6 +9,11 @@ import {
 } from "@/lib/duel/ocgcore-resources";
 
 const MODE_MR5 = 190464n;
+// Zona de Monstro Extra (DUEL_EMZONE do ocgcore). As salas não usam Link nem
+// Pêndulo, então jogamos a Master Rule 5 SEM essa zona: Fusão, Synchro e XYZ
+// vão direto para as 5 zonas de monstro, como antigamente (e como o tabuleiro mostra).
+const DUEL_EMZONE = 0x2000n;
+const DUEL_RULES = MODE_MR5 & ~DUEL_EMZONE;
 const PSEUDO_SHUFFLE = 16n;
 const LOCATION_DECK = 1;
 const LOCATION_EXTRA = 64;
@@ -427,7 +432,7 @@ export async function createOcgDuelSession(input: {
   const handle = await core.createDuel({
     // O servidor já embaralha os decks com uma fonte segura. Desabilitar o
     // segundo embaralhamento do core mantém a mão visual e a mão real iguais.
-    flags: MODE_MR5 | PSEUDO_SHUFFLE,
+    flags: DUEL_RULES | PSEUDO_SHUFFLE,
     seed: createSeed(),
     team1: {
       startingLP: 8_000,

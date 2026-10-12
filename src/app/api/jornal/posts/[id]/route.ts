@@ -19,7 +19,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const denied = await guard(params.id);
   if (denied) return denied;
 
-  const parsed = postSchema.safeParse(await req.json());
+  const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." }, { status: 400 });
   }

@@ -10,3 +10,9 @@ export async function getViewer() {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, role: true } });
   return user ? { id: user.id, role: user.role, isAdmin: isAdmin(user.role) } : null;
 }
+
+/** Para rotas da API do Admin: devolve o Admin logado ou null (a rota responde 403). */
+export async function getAdmin() {
+  const viewer = await getViewer();
+  return viewer?.isAdmin ? viewer : null;
+}

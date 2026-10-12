@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { resendVerificationSchema } from "@/lib/validation";
 
 export async function POST(req: Request) {
-  const parsed = resendVerificationSchema.safeParse(await req.json());
+  const parsed = resendVerificationSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "E-mail inválido." }, { status: 400 });
   }

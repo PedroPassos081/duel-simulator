@@ -6,6 +6,8 @@ import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+const SUSPENDED_MESSAGE = "Sua conta está suspensa. Se achar que foi um engano, fale com a equipe.";
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -14,7 +16,8 @@ function LoginForm() {
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Vindo do login com Google de uma conta suspensa: /login?error=suspended
+  const [error, setError] = useState<string | null>(searchParams.get("error") === "suspended" ? SUSPENDED_MESSAGE : null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -30,6 +33,10 @@ function LoginForm() {
 
     setLoading(false);
 
+    if (result?.code === "suspended") {
+      setError(SUSPENDED_MESSAGE);
+      return;
+    }
     if (result?.error) {
       setError(
         "E-mail, usuário ou senha inválidos. Confirme também se o e-mail foi verificado."
@@ -43,7 +50,7 @@ function LoginForm() {
     <main className="relative isolate flex min-h-[calc(100vh-3rem)] items-center justify-center overflow-hidden px-4 py-12">
       <div className="absolute left-1/2 top-0 -z-10 h-72 w-72 -translate-x-1/2 rounded-full bg-edison-gold/10 blur-3xl" />
 
-      <section className="w-full max-w-md rounded-2xl border border-edison-border bg-edison-panel/90 p-6 shadow-2xl shadow-black/30 backdrop-blur sm:p-8">
+      <section className="w-full max-w-md rounded-2xl border border-edison-border bg-edison-panel/90 p-6 shadow-2xl shadow-black/30 sm:p-8">
         <div className="mb-7 text-center">
           <Image
             src="/logo_with_name.png"

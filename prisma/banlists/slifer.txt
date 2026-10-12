@@ -1,0 +1,137 @@
+# Banlist da Sala Slifer (enviada pelo usuário em 30/09/2026)
+# Uma carta por linha, nomes em inglês. Seções: [forbidden], [limited], [semi-limited].
+
+[forbidden]
+Chaos Emperor Dragon - Envoy of the End
+Black Luster Soldier - Envoy of the Beginning
+Cyber Jar
+Fiber Jar
+Magical Scientist
+Makyura the Destructor
+Sinister Serpent
+Tribe-Infecting Virus
+Yata-Garasu
+Butterfly Dagger - Elma
+Change of Heart
+Dark Hole
+Delinquent Duo
+Harpie's Feather Duster
+Mirage of Nightmare
+Monster Reborn
+Painful Choice
+Pot of Greed
+Raigeki
+Snatch Steal
+The Forceful Sentry
+Exchange of the Spirit
+Imperial Order
+Last Turn
+Time Seal
+Cyber-Stein
+Metamorphosis
+Confiscation
+Drop Off
+Dimension Fusion
+Return from the Different Dimension
+Premature Burial
+Heavy Storm
+Royal Decree
+Skill Drain
+Vanity's Fiend
+Graceful Charity
+Torrential Tribute
+Demise, King of Armageddon
+Lightning Vortex
+Future Fusion
+Morphing Jar
+Smashing Ground
+Ring of Destruction
+Chimeratech Overdragon
+Overload Fusion
+Neo-Spacian Grand Mole
+Bottomless Trap Hole
+Enemy Controller
+Compulsory Evacuation Device
+# Proibidas no Tag Force 1 (listas padrão e Game Original do jogo)
+Witch of the Black Forest
+Mirror Force
+Victory Dragon
+Sixth Sense
+Thousand-Eyes Restrict
+Dark Magician of Chaos
+Tsukuyomi
+Card of Safe Return
+Last Will
+Royal Oppression
+Ultimate Offering
+Machine Duplication
+Cold Wave
+Magician of Faith
+Mind Control
+Monster Gate
+Trap Dustshoot
+
+[limited]
+Hammer Shot
+Blast with Chain
+Kunai with Chain
+Sakuretsu Armor
+Widespread Ruin
+Exiled Force
+Fissure
+Dust Tornado
+Nobleman of Crossout
+Breaker the Magical Warrior
+Giant Trunade
+Cyber Dragon
+D.D. Warrior Lady
+Exodia the Forbidden One
+Right Arm of the Forbidden One
+Left Arm of the Forbidden One
+Right Leg of the Forbidden One
+Left Leg of the Forbidden One
+Mask of Darkness
+Sangan
+Mystic Tomato
+Twin-Headed Behemoth
+Injection Fairy Lily
+Jinzo
+Sacred Phoenix of Nephthys
+Book of Moon
+Card Destruction
+Mystical Space Typhoon
+Limiter Removal
+Call of the Haunted
+Level Limit - Area B
+Scapegoat
+Swords of Revealing Light
+Ceasefire
+Magic Cylinder
+Gravity Bind
+Reckless Greed
+Reinforcement of the Army
+Creature Swap
+Trap Hole
+Chaos Sorcerer
+Night Assailant
+Mind Crush
+Solemn Judgment
+Reasoning
+Snipe Hunter
+Necrovalley
+Dimensional Fissure
+Macro Cosmos
+Book of Life
+Wall of Revealing Light
+
+[semi-limited]
+Apprentice Magician
+D.D. Assailant
+Manticore of Darkness
+Reflect Bounder
+Emergency Provisions
+Upstart Goblin
+Good Goblin Housekeeping
+Deck Devastation Virus
+Chain Strike
+United We Stand

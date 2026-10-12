@@ -1,0 +1,174 @@
+# Banlist da Sala Obelisco (Edison sem o meta + XYZ e adições) — enviada pelo usuário em 30/09/2026
+# Uma carta por linha, nomes em inglês. Seções: [forbidden], [limited], [semi-limited].
+# Aplicar: npx tsx --env-file=.env prisma/apply-banlist.ts obelisk --apply (substitui a banlist inteira)
+
+[forbidden]
+Chaos Emperor Dragon - Envoy of the End
+Black Luster Soldier - Envoy of the Beginning
+Dark Magician of Chaos
+Witch of the Black Forest
+Yata-Garasu
+Fiber Jar
+Cyber Jar
+Cyber-Stein
+Destiny HERO - Disk Commander
+Magical Scientist
+Magician of Faith
+Makyura the Destructor
+Sinister Serpent
+Thousand-Eyes Restrict
+Dark Strike Fighter
+Tribe-Infecting Virus
+Tsukuyomi
+Victory Dragon
+Butterfly Dagger - Elma
+Card of Safe Return
+Change of Heart
+Confiscation
+Dark Hole
+Delinquent Duo
+Dimension Fusion
+Last Will
+Metamorphosis
+Mirage of Nightmare
+Painful Choice
+Snatch Steal
+The Forceful Sentry
+Exchange of the Spirit
+Last Turn
+Ring of Destruction
+Time Seal
+Morphing Jar
+Cold Wave
+Future Fusion
+Lonefire Blossom
+Judgment Dragon
+Royal Oppression
+Ryko, Lightsworn Hunter
+Skill Drain
+Rekindling
+Honest
+Ultimate Offering
+Machine Duplication
+# Pedidas antes (mensagens anteriores)
+Archlord Kristya
+Sky Scourge Norleras
+Tytannial, Princess of Camellias
+Mist Wurm
+XX-Saber Ragigura
+Pot of Greed
+Raigeki
+Graceful Charity
+Harpie's Feather Duster
+Monster Reborn
+Premature Burial
+Imperial Order
+Crush Card Virus
+Mirror Force
+
+[limited]
+Card Trooper
+Chaos Sorcerer
+Dark Armed Dragon
+Dark Resonator
+Exodia the Forbidden One
+Right Arm of the Forbidden One
+Left Arm of the Forbidden One
+Right Leg of the Forbidden One
+Left Leg of the Forbidden One
+Gorz the Emissary of Darkness
+Gladiator Beast Bestiari
+Marshmallon
+Mezuki
+Necro Gardna
+Neo-Spacian Grand Mole
+Night Assailant
+Plaguespreader Zombie
+Sangan
+Snipe Hunter
+Summoner Monk
+Tragoedia
+Wall of Revealing Light
+Advanced Ritual Art
+Allure of Darkness
+Burial from a Different Dimension
+Emergency Teleport
+Foolish Burial
+Giant Trunade
+Heavy Storm
+Level Limit - Area B
+Limiter Removal
+Magical Stone Excavation
+Mind Control
+Monster Gate
+Mystical Space Typhoon
+One for One
+Overload Fusion
+Reasoning
+Reinforcement of the Army
+Scapegoat
+The Transmigration Prophecy
+Call of the Haunted
+Ceasefire
+Gravity Bind
+Magic Cylinder
+Mind Crush
+Return from the Different Dimension
+Solemn Judgment
+Torrential Tribute
+Trap Dustshoot
+Brionac, Dragon of the Ice Barrier
+Chimeratech Overdragon
+Goyo Guardian
+Red-Eyes Darkness Metal Dragon
+Necrovalley
+Compulsory Evacuation Device
+Book of Life
+Dimensional Fissure
+Caius the Shadow Monarch
+Destiny Draw
+Deep Sea Diva
+Macro Cosmos
+Starlight Road
+Constellar Sombre
+Super-Nimble Mega Hamster
+Number 6: Chronomaly Atlandis
+Catapult Zone
+# Pedida antes (mensagem anterior)
+Machina Fortress
+Black Rose Dragon
+Brain Control
+Card Destruction
+Elemental HERO Stratos
+Magical Explosion
+Megamorph
+Mind Master
+Necroface
+Ojama Trio
+Rescue Cat
+Spirit Reaper
+Swords of Revealing Light
+Blackwing - Gale the Whirlwind
+Charge of the Light Brigade
+Lumina, Lightsworn Summoner
+Bottomless Trap Hole
+
+[semi-limited]
+Cyber Dragon
+Demise, King of Armageddon
+Destiny HERO - Malicious
+Goblin Zombie
+Chain Strike
+Gold Sarcophagus
+United We Stand
+Royal Decree
+Book of Moon
+Nordic Relic Gungnir
+Odin, Father of the Aesir
+Loki, Lord of the Aesir
+Thor, Lord of the Aesir
+Valkyrie of the Nordic Ascendant
+Gear Gigant X
+Dandylion
+Black Whirlwind
+Treeborn Frog

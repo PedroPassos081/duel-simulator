@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CircleDollarSign, Clock, Gem, Plus, Trash2, Trophy } from "lucide-react";
+import { Clock, Plus, Trash2, Trophy } from "lucide-react";
+import { GoldIcon, CreditIcon } from "@/components/theme/CurrencyIcons";
 import { Avatar } from "@/components/Avatar";
 import { PlayerName } from "@/components/PlayerName";
 import {
@@ -38,11 +39,11 @@ function Amounts({ gold, cash }: { gold: number; cash: number }) {
   return (
     <span className="inline-flex items-center gap-2 tabular-nums">
       <span className="flex items-center gap-1 text-amber-400">
-        <CircleDollarSign className="w-3.5 h-3.5" />
+        <GoldIcon className="w-3.5 h-3.5" />
         {gold}
       </span>
       <span className="flex items-center gap-1 text-purple-400">
-        <Gem className="w-3.5 h-3.5" />
+        <CreditIcon className="w-3.5 h-3.5" />
         {cash}
       </span>
     </span>
